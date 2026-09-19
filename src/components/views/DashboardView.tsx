@@ -60,19 +60,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <div className="space-y-6 pb-12">
       {/* Top Welcome & Community Simulation Banner */}
-      <div className="bg-gradient-to-r from-[#0C2A5A] via-[#123875] to-[#1E60BF] rounded-2xl p-6 text-white shadow-lg relative overflow-hidden">
-        <div className="absolute right-0 top-0 translate-x-12 -translate-y-8 w-64 h-64 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+      <div className="bg-white border border-slate-200 border-l-4 border-l-[#0F2747] rounded-xl p-6 text-[#172033] shadow-xs relative overflow-hidden">
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-400/20 text-blue-200 text-xs font-semibold mb-2 backdrop-blur-xs border border-blue-300/20">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold mb-2 border border-blue-100">
+              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
               <span>Demostración Funcional Conecta Masivo</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight">
               Bienvenido(a), {currentUser.nombre}
             </h1>
-            <p className="text-xs sm:text-sm text-blue-100/90 mt-1 max-w-2xl leading-relaxed">
+            <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl leading-relaxed">
               Sistema preparado con <strong>{simulatedTotalCommunity} contactos comunitarios</strong> registrados voluntariamente para difusión institucional por WhatsApp verificado y SMS masivo.
             </p>
           </div>
@@ -84,7 +83,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <button
                   id="btn-quick-new-campaign"
                   onClick={() => onNavigate('nueva_campana')}
-                  className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-md hover:shadow-lg cursor-pointer"
+                  className="flex items-center gap-2 bg-[#0F9F8F] hover:bg-[#0B7F73] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Nueva Campaña</span>
@@ -92,7 +91,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <button
                   id="btn-quick-add-contact"
                   onClick={onOpenNewContactModal}
-                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3.5 py-2.5 rounded-xl text-xs font-semibold border border-white/20 transition-all cursor-pointer"
+                  className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-semibold border border-slate-300 transition-colors cursor-pointer"
                 >
                   <UserPlus className="w-4 h-4 text-blue-200" />
                   <span>Agregar Contacto</span>
@@ -102,7 +101,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <button
               id="btn-quick-import"
               onClick={onOpenImportModal}
-              className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3.5 py-2.5 rounded-xl text-xs font-semibold border border-white/20 transition-all cursor-pointer"
+              className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 px-3.5 py-2.5 rounded-xl text-xs font-semibold border border-slate-300 transition-colors cursor-pointer"
             >
               <Upload className="w-4 h-4 text-blue-200" />
               <span>Importar CSV</span>

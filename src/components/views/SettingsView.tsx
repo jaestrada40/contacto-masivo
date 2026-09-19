@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Settings, 
   Key, 
@@ -19,6 +19,7 @@ import {
 import { AppSettings, User } from '../../types';
 import { storageService } from '../../services/storageService';
 import { twilioService } from '../../services/twilioMessagingService';
+import { api } from '../../services/api';
 
 interface SettingsViewProps {
   currentUser: User;
@@ -31,15 +32,50 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
   const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [logoError, setLogoError] = useState('');
+  const [mfaEnforced, setMfaEnforced] = useState<boolean | null>(null);
+  const [mfaSaving, setMfaSaving] = useState(false);
+  const [mfaError, setMfaError] = useState('');
+
+  useEffect(() => {
+    if (currentUser.rol !== 'admin') return;
+    api.settings().then((value: any) => setMfaEnforced(Boolean(value.mfaEnforced))).catch(() => setMfaError('No fue posible consultar el estado de MFA.'));
+  }, [currentUser.rol]);
 
   const handleLogoUpload = (file?: File) => {
     setLogoError('');
     if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { setLogoError('Use una imagen PNG, JPEG o WebP.'); return; }
     if (file.size > 1024 * 1024) { setLogoError('El logo no puede exceder 1 MB.'); return; }
+    const acceptedRasterTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+    if (!acceptedRasterTypes.includes(file.type) && !isSvg) { setLogoError('Use una imagen PNG, JPEG, WebP o SVG.'); return; }
     const reader = new FileReader();
+    if (isSvg) {
+      reader.onload = () => {
+        const svg = String(reader.result);
+        if (!/^\s*<svg[\s>]/i.test(svg) || /<\s*(script|foreignObject|iframe|object|embed)\b|\son\w+\s*=|(?:href|xlink:href)\s*=\s*["']\s*(?:https?:|javascript:|data:)/i.test(svg)) {
+          setLogoError('El SVG contiene contenido no permitido. Use un SVG estático, sin scripts ni enlaces externos.');
+          return;
+        }
+        setSettings(previous => ({ ...previous, logoDataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` }));
+      };
+      reader.readAsText(file);
+      return;
+    }
     reader.onload = () => setSettings(previous => ({ ...previous, logoDataUrl: String(reader.result) }));
     reader.readAsDataURL(file);
+  };
+
+  const handleMfaEnforcement = async (enabled: boolean) => {
+    setMfaError('');
+    setMfaSaving(true);
+    try {
+      const result = await api.mfaEnforcement(enabled);
+      setMfaEnforced(result.mfaEnforced);
+    } catch (error) {
+      setMfaError(error instanceof Error ? error.message : 'No fue posible actualizar MFA.');
+    } finally {
+      setMfaSaving(false);
+    }
   };
 
   const handleSave = (e: React.FormEvent) => {
@@ -94,13 +130,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
             <div className="flex gap-2">
               <label className="cursor-pointer px-3 py-2 rounded-lg bg-[#0C2A5A] text-white font-bold">
                 Subir logo
-                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" onChange={event => handleLogoUpload(event.target.files?.[0])} />
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" className="sr-only" onChange={event => handleLogoUpload(event.target.files?.[0])} />
               </label>
               {settings.logoDataUrl && <button type="button" onClick={() => setSettings(previous => ({ ...previous, logoDataUrl: undefined }))} className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold">Quitar</button>}
             </div>
           </div>
           {logoError && <p className="text-rose-700 font-medium">{logoError}</p>}
         </div>
+
+        {currentUser.rol === 'admin' && (
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2 bg-blue-50 text-blue-700 rounded-lg"><ShieldCheck className="w-5 h-5" /></div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Autenticación multifactor (MFA)</h3>
+                <p className="text-xs text-slate-500 mt-1">Exige un código de una aplicación autenticadora a todas las cuentas en su próximo inicio de sesión.</p>
+              </div>
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div>
+                <p className="font-semibold text-slate-800">{mfaEnforced ? 'MFA obligatorio' : 'MFA no obligatorio'}</p>
+                <p className="text-[11px] text-slate-500 mt-1">Al activarlo, cada persona configurará su código TOTP de seis dígitos al volver a iniciar sesión.</p>
+              </div>
+              <button type="button" role="switch" aria-checked={Boolean(mfaEnforced)} disabled={mfaSaving || mfaEnforced === null} onClick={() => handleMfaEnforcement(!mfaEnforced)} className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${mfaEnforced ? 'bg-emerald-600' : 'bg-slate-300'}`}>
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${mfaEnforced ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+            </div>
+            {mfaError && <p className="text-rose-700 font-medium">{mfaError}</p>}
+          </div>
+        )}
         {/* Twilio API Integration Section */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">

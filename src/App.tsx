@@ -112,7 +112,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#F8FAFC] font-sans antialiased text-slate-900">
+    <div className="flex h-screen w-screen overflow-hidden bg-[#F6F8FB] font-sans antialiased text-[#172033]">
       {/* Desktop Sidebar */}
       <div className="hidden lg:block h-full shrink-0">
         <Sidebar

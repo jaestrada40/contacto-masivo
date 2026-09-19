@@ -98,20 +98,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#081F42] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
-      {/* Subtle Background Pattern */}
-      <div className="absolute inset-0 opacity-10 pointer-events-none bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:24px_24px]"></div>
+    <div className="min-h-screen bg-[#F6F8FB] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10 px-4">
         {/* Brand Logo & Header */}
         <div className="text-center">
-          {logoDataUrl ? <img src={logoDataUrl} alt="Logo de la organización" className="h-20 w-48 object-contain mx-auto mb-4" /> : <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-xl shadow-blue-950/80 mb-4 border border-blue-400/20" />}
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Conecta Masivo
-          </h2>
-          <p className="mt-2 text-xs sm:text-sm text-blue-200/80">
-            Plataforma Institucional de Campañas WhatsApp & SMS
-          </p>
+          {logoDataUrl ? <img src={logoDataUrl} alt="Logo de la organización" className="h-28 sm:h-32 w-80 sm:w-[30rem] max-w-full object-contain mx-auto mb-6" /> : <div className="h-28 sm:h-32 w-80 sm:w-[30rem] max-w-full mx-auto mb-6 rounded-2xl bg-[#0F2747] shadow-xs" aria-label="Logo no configurado" />}
         </div>
 
         {/* Login Card */}
@@ -268,7 +260,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         </div>
 
         {/* Security and Compliance Footer Notice */}
-        <div className="mt-6 text-center text-xs text-blue-200/60 flex items-center justify-center gap-2">
+        <div className="mt-6 text-center text-xs text-[#64748B] flex items-center justify-center gap-2">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
           <span>Cumplimiento RGPD / LPDP y Consentimiento Verificado</span>
         </div>

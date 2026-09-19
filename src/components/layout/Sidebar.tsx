@@ -74,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }}
         className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-sm font-medium transition-all ${
           active
-            ? 'bg-blue-600/15 text-blue-400 font-semibold shadow-xs'
+            ? 'bg-[#1D4ED8] text-white font-semibold'
             : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
         }`}
       >

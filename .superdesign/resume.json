@@ -1,0 +1,10 @@
+{
+  "targets": {
+    "conecta-masivo-dashboard": {
+      "projectId": "fd174593-1ba0-4444-84a9-f5cc036eb6cb",
+      "activeDraftId": "acf9a66e-35e3-437d-b548-b48d5989ecb9",
+      "title": "Conecta Masivo — SaaS institucional",
+      "contextFiles": [".superdesign/design-system.md", "src/App.tsx", "src/components/layout/Sidebar.tsx", "src/components/layout/Header.tsx", "src/components/views/DashboardView.tsx", "src/index.css"]
+    }
+  }
+}

@@ -102,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             id="btn-header-nueva-campana"
             onClick={() => onNavigate('nueva_campana')}
-            className="flex items-center gap-2 bg-[#0C2A5A] hover:bg-[#123875] text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer"
+            className="flex items-center gap-2 bg-[#0F9F8F] hover:bg-[#0B7F73] text-white px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4 text-emerald-400" />
             <span>Nueva Campaña</span>

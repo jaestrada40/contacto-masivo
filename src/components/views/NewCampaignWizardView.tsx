@@ -31,10 +31,11 @@ import {
   Segment, 
   User 
 } from '../../types';
-import { WHATSAPP_TEMPLATES } from '../../data/mockData';
 import { storageService } from '../../services/storageService';
 import { twilioService } from '../../services/twilioMessagingService';
 import { ActiveView } from '../layout/Sidebar';
+
+const WHATSAPP_TEMPLATES: { id: string; nombre: string; categoria: 'UTILITY' | 'MARKETING'; titulo: string; cuerpo: string; variables: string[]; idioma: string }[] = [];
 
 interface NewCampaignWizardViewProps {
   contacts: Contact[];

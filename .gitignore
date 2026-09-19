@@ -6,3 +6,5 @@ coverage/
 *.log
 .env*
 !.env.example
+.superdesign/tmp/
+graphify-out/

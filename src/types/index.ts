@@ -7,6 +7,7 @@ export interface User {
   rol: UserRole;
   estado: 'activo' | 'inactivo';
   activo?: boolean;
+  mfaHabilitado?: boolean;
   cargo?: string;
   ultimoAcceso?: string;
   creadoEn: string;

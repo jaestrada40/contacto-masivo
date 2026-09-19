@@ -8,15 +8,6 @@ import {
   AuditLog, 
   UserRole 
 } from '../types';
-import { 
-  INITIAL_CONTACTS, 
-  INITIAL_CAMPAIGNS, 
-  INITIAL_MESSAGE_LOGS, 
-  INITIAL_SEGMENTS, 
-  INITIAL_USERS, 
-  INITIAL_SETTINGS, 
-  INITIAL_AUDIT_LOGS 
-} from '../data/mockData';
 
 const STORAGE_KEYS = {
   CONTACTS: 'conecta_masivo_contacts',
@@ -34,7 +25,7 @@ class StorageService {
   private messageLogs: MessageLog[] = [];
   private segments: Segment[] = [];
   private users: User[] = [];
-  private settings: OrganizationSettings = INITIAL_SETTINGS;
+  private settings: OrganizationSettings = { nombre: '', logoTexto: '', correoSoporte: '', telefonoSoporte: '', sitioWeb: '', twilioConfigured: false, twilioAccountSidMasked: '', twilioWhatsAppFrom: '', twilioSmsFrom: '', costoWhatsAppUtilityMil: 0, costoWhatsAppMarketingMil: 0, costoSmsMil: 0, alertaCostoUmbral: 0, horarioPermitidoInicio: '08:00', horarioPermitidoFin: '20:00', permitirEnviosFindeSemana: false };
   private auditLogs: AuditLog[] = [];
 
   private listeners: (() => void)[] = [];
@@ -46,25 +37,25 @@ class StorageService {
   private init() {
     try {
       const storedContacts = localStorage.getItem(STORAGE_KEYS.CONTACTS);
-      this.contacts = storedContacts ? JSON.parse(storedContacts) : INITIAL_CONTACTS;
+      this.contacts = storedContacts ? JSON.parse(storedContacts) : [];
 
       const storedCampaigns = localStorage.getItem(STORAGE_KEYS.CAMPAIGNS);
-      this.campaigns = storedCampaigns ? JSON.parse(storedCampaigns) : INITIAL_CAMPAIGNS;
+      this.campaigns = storedCampaigns ? JSON.parse(storedCampaigns) : [];
 
       const storedMessages = localStorage.getItem(STORAGE_KEYS.MESSAGES);
-      this.messageLogs = storedMessages ? JSON.parse(storedMessages) : INITIAL_MESSAGE_LOGS;
+      this.messageLogs = storedMessages ? JSON.parse(storedMessages) : [];
 
       const storedSegments = localStorage.getItem(STORAGE_KEYS.SEGMENTS);
-      this.segments = storedSegments ? JSON.parse(storedSegments) : INITIAL_SEGMENTS;
+      this.segments = storedSegments ? JSON.parse(storedSegments) : [];
 
       const storedUsers = localStorage.getItem(STORAGE_KEYS.USERS);
-      this.users = storedUsers ? JSON.parse(storedUsers) : INITIAL_USERS;
+      this.users = storedUsers ? JSON.parse(storedUsers) : [];
 
       const storedSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      this.settings = storedSettings ? JSON.parse(storedSettings) : INITIAL_SETTINGS;
+      this.settings = storedSettings ? JSON.parse(storedSettings) : this.settings;
 
       const storedAudit = localStorage.getItem(STORAGE_KEYS.AUDIT);
-      this.auditLogs = storedAudit ? JSON.parse(storedAudit) : INITIAL_AUDIT_LOGS;
+      this.auditLogs = storedAudit ? JSON.parse(storedAudit) : [];
     } catch (e) {
       console.error('Error loading storage, initializing default data', e);
       this.resetDemoData();
@@ -365,13 +356,13 @@ class StorageService {
     localStorage.removeItem(STORAGE_KEYS.SETTINGS);
     localStorage.removeItem(STORAGE_KEYS.AUDIT);
 
-    this.contacts = [...INITIAL_CONTACTS];
-    this.campaigns = [...INITIAL_CAMPAIGNS];
-    this.messageLogs = [...INITIAL_MESSAGE_LOGS];
-    this.segments = [...INITIAL_SEGMENTS];
-    this.users = [...INITIAL_USERS];
-    this.settings = { ...INITIAL_SETTINGS };
-    this.auditLogs = [...INITIAL_AUDIT_LOGS];
+    this.contacts = [];
+    this.campaigns = [];
+    this.messageLogs = [];
+    this.segments = [];
+    this.users = [];
+    this.settings = { nombre: '', logoTexto: '', correoSoporte: '', telefonoSoporte: '', sitioWeb: '', twilioConfigured: false, twilioAccountSidMasked: '', twilioWhatsAppFrom: '', twilioSmsFrom: '', costoWhatsAppUtilityMil: 0, costoWhatsAppMarketingMil: 0, costoSmsMil: 0, alertaCostoUmbral: 0, horarioPermitidoInicio: '08:00', horarioPermitidoFin: '20:00', permitirEnviosFindeSemana: false };
+    this.auditLogs = [];
 
     this.notify();
   }
