@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -13,50 +13,55 @@ import {
   Layers,
   Sparkles
 } from 'lucide-react';
-import { Campaign, Contact, MessageLog } from '../../types';
+import { Contact, MessageLog } from '../../types';
 
 interface ReportsViewProps {
-  campaigns: Campaign[];
   contacts: Contact[];
   messageLogs: MessageLog[];
 }
 
 export const ReportsView: React.FC<ReportsViewProps> = ({
-  campaigns,
   contacts,
   messageLogs,
 }) => {
-  const [selectedPeriod, setSelectedPeriod] = useState('mes');
+  const sentMessages = messageLogs.filter(m => ['enviado', 'entregado', 'leido'].includes(m.estado));
+  const deliveredMessages = messageLogs.filter(m => ['entregado', 'leido'].includes(m.estado));
+  const readMessages = messageLogs.filter(m => m.estado === 'leido');
+  const failedMessages = messageLogs.filter(m => m.estado === 'fallido');
+  const totalEnviados = sentMessages.length;
+  const totalEntregados = deliveredMessages.length;
+  const totalLeidos = readMessages.length;
+  const totalFallidos = failedMessages.length;
+  const totalCosto = messageLogs.reduce((s, m) => s + m.costoEstimado, 0);
 
-  // Aggregated calculations
-  const totalEnviados = campaigns.reduce((s, c) => s + (c.estadisticas?.enviados || 0), 0);
-  const totalEntregados = campaigns.reduce((s, c) => s + (c.estadisticas?.entregados || 0), 0);
-  const totalLeidos = campaigns.reduce((s, c) => s + (c.estadisticas?.leidos || 0), 0);
-  const totalFallidos = campaigns.reduce((s, c) => s + (c.estadisticas?.fallidos || 0), 0);
-  const totalCosto = campaigns.reduce((s, c) => s + (c.estadisticas?.costoEstimado || 0), 0);
+  const deliveryRate = totalEnviados > 0 ? ((totalEntregados / totalEnviados) * 100).toFixed(1) : '0.0';
+  const readRate = totalEntregados > 0 ? ((totalLeidos / totalEntregados) * 100).toFixed(1) : '0.0';
 
-  const deliveryRate = totalEnviados > 0 ? ((totalEntregados / totalEnviados) * 100).toFixed(1) : '97.2';
-  const readRate = totalEntregados > 0 ? ((totalLeidos / totalEntregados) * 100).toFixed(1) : '85.4';
+  const waMessages = messageLogs.filter(m => m.canal === 'whatsapp');
+  const smsMessages = messageLogs.filter(m => m.canal === 'sms');
+  const waSent = waMessages.filter(m => ['enviado', 'entregado', 'leido'].includes(m.estado)).length;
+  const waDelivered = waMessages.filter(m => ['entregado', 'leido'].includes(m.estado)).length;
+  const waRead = waMessages.filter(m => m.estado === 'leido').length;
+  const waReadRate = waDelivered ? ((waRead / waDelivered) * 100).toFixed(1) : '0.0';
+  const waDeliveryPct = waSent > 0 ? Math.round((waDelivered / waSent) * 100) : 0;
+  const smsSent = smsMessages.filter(m => ['enviado', 'entregado', 'leido'].includes(m.estado)).length;
+  const smsDelivered = smsMessages.filter(m => ['entregado', 'leido'].includes(m.estado)).length;
+  const smsFailed = smsMessages.filter(m => m.estado === 'fallido').length;
+  const smsDeliveryPct = smsSent > 0 ? Math.round((smsDelivered / smsSent) * 100) : 0;
+  const waCost = waMessages.reduce((s, m) => s + m.costoEstimado, 0);
+  const smsCost = smsMessages.reduce((s, m) => s + m.costoEstimado, 0);
+  const contactsWithConsent = contacts.filter(c => c.consentimientoWhatsApp || c.consentimientoSMS).length;
+  const consentRate = contacts.length ? Math.round((contactsWithConsent / contacts.length) * 100) : 0;
 
-  // WhatsApp vs SMS breakdown
-  const waCampaigns = campaigns.filter(c => c.canal === 'whatsapp');
-  const smsCampaigns = campaigns.filter(c => c.canal === 'sms');
-
-  const waEnviados = waCampaigns.reduce((s, c) => s + (c.estadisticas?.enviados || 0), 0);
-  const waEntregados = waCampaigns.reduce((s, c) => s + (c.estadisticas?.entregados || 0), 0);
-  const waDeliveryPct = waEnviados > 0 ? Math.round((waEntregados / waEnviados) * 100) : 98;
-
-  const smsEnviados = smsCampaigns.reduce((s, c) => s + (c.estadisticas?.enviados || 0), 0);
-  const smsEntregados = smsCampaigns.reduce((s, c) => s + (c.estadisticas?.entregados || 0), 0);
-  const smsDeliveryPct = smsEnviados > 0 ? Math.round((smsEntregados / smsEnviados) * 100) : 96;
-
-  // Failure reasons breakdown
-  const failureReasons = [
-    { motivo: 'Número telefónico no asignado o fuera de servicio', count: 18, pct: 45 },
-    { motivo: 'Falta unirse a Sandbox de Twilio (join code)', count: 12, pct: 30 },
-    { motivo: 'Bandeja de entrada saturada o rechazo del operador', count: 6, pct: 15 },
-    { motivo: 'Opt-out / Palabra clave STOP recibida', count: 4, pct: 10 },
-  ];
+  const failureReasons = Array.from(failedMessages.reduce((reasons, message) => {
+    const reason = message.motivoError?.trim() || 'Motivo no especificado';
+    reasons.set(reason, (reasons.get(reason) || 0) + 1);
+    return reasons;
+  }, new Map<string, number>()), ([motivo, count]) => ({
+    motivo,
+    count,
+    pct: totalFallidos ? Math.round((count / totalFallidos) * 100) : 0,
+  }));
 
   const handleExportSummaryCSV = () => {
     const headers = ['Métrica', 'Valor', 'Detalle'];
@@ -66,8 +71,8 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
       ['Total Mensajes Leídos (WhatsApp)', totalLeidos.toString(), `${readRate}% tasa de apertura`],
       ['Total Mensajes Fallidos', totalFallidos.toString(), 'Rechazos o números inválidos'],
       ['Inversión Acumulada', `$${totalCosto.toFixed(2)} USD`, 'Costo estimado Twilio API'],
-      ['Efectividad WhatsApp', `${waDeliveryPct}%`, `${waEntregados} / ${waEnviados}`],
-      ['Efectividad SMS', `${smsDeliveryPct}%`, `${smsEntregados} / ${smsEnviados}`],
+      ['Efectividad WhatsApp', `${waDeliveryPct}%`, `${waDelivered} / ${waSent}`],
+      ['Efectividad SMS', `${smsDeliveryPct}%`, `${smsDelivered} / ${smsSent}`],
     ];
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
@@ -140,11 +145,11 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs">
           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Base con Consentimiento</span>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-indigo-700 font-mono">100%</span>
-            <span className="text-xs text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">Verificado</span>
+            <span className="text-3xl font-extrabold text-indigo-700 font-mono">{consentRate}%</span>
+            <span className="text-xs text-slate-600 font-bold bg-slate-100 px-1.5 py-0.5 rounded">registrado</span>
           </div>
           <p className="mt-3 text-[11px] text-slate-500">
-            0% de envíos no solicitados o spam regulatorio
+            {contactsWithConsent} de {contacts.length} contactos con consentimiento registrado
           </p>
         </div>
       </div>
@@ -160,7 +165,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Rendimiento: WhatsApp Business</h3>
-                <p className="text-xs text-slate-500">Canal verificado con plantillas interactivas</p>
+                <p className="text-xs text-slate-500">Actividad registrada en WhatsApp</p>
               </div>
             </div>
             <span className="bg-emerald-100 text-emerald-800 text-xs font-extrabold px-2.5 py-1 rounded-full">
@@ -171,19 +176,19 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-slate-500">Mensajes despachados:</span>
-              <span className="font-bold text-slate-800 font-mono">{waEnviados.toLocaleString()}</span>
+              <span className="font-bold text-slate-800 font-mono">{waSent.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-slate-500">Entregados con éxito:</span>
-              <span className="font-bold text-emerald-600 font-mono">{waEntregados.toLocaleString()}</span>
+              <span className="font-bold text-emerald-600 font-mono">{waDelivered.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-slate-500">Confirmación de lectura:</span>
-              <span className="font-bold text-sky-600 font-mono">{readRate}%</span>
+              <span className="font-bold text-sky-600 font-mono">{waReadRate}% ({waRead.toLocaleString()})</span>
             </div>
             <div className="flex justify-between py-1.5">
-              <span className="text-slate-500">Costo aproximado (por millar):</span>
-              <span className="font-bold text-slate-800 font-mono">$5.00 USD</span>
+              <span className="text-slate-500">Costo registrado:</span>
+              <span className="font-bold text-slate-800 font-mono">${waCost.toFixed(2)} USD</span>
             </div>
           </div>
         </div>
@@ -197,7 +202,7 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Rendimiento: SMS Masivo</h3>
-                <p className="text-xs text-slate-500">Canal directo a red telefónica celular</p>
+                <p className="text-xs text-slate-500">Actividad registrada por SMS</p>
               </div>
             </div>
             <span className="bg-blue-100 text-blue-800 text-xs font-extrabold px-2.5 py-1 rounded-full">
@@ -208,19 +213,19 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
           <div className="space-y-3 text-xs">
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-slate-500">Mensajes despachados:</span>
-              <span className="font-bold text-slate-800 font-mono">{smsEnviados.toLocaleString()}</span>
+              <span className="font-bold text-slate-800 font-mono">{smsSent.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-slate-500">Entregados con éxito:</span>
-              <span className="font-bold text-blue-600 font-mono">{smsEntregados.toLocaleString()}</span>
+              <span className="font-bold text-blue-600 font-mono">{smsDelivered.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-slate-500">Recepción sin conexión de datos:</span>
-              <span className="font-bold text-emerald-600 font-mono">100% móvil</span>
+              <span className="text-slate-500">Mensajes fallidos:</span>
+              <span className="font-bold text-rose-600 font-mono">{smsFailed.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5">
-              <span className="text-slate-500">Costo aproximado (por millar):</span>
-              <span className="font-bold text-slate-800 font-mono">$10.00 USD</span>
+              <span className="text-slate-500">Costo registrado:</span>
+              <span className="font-bold text-slate-800 font-mono">${smsCost.toFixed(2)} USD</span>
             </div>
           </div>
         </div>
@@ -239,7 +244,9 @@ export const ReportsView: React.FC<ReportsViewProps> = ({
         </div>
 
         <div className="space-y-3">
-          {failureReasons.map((item, idx) => (
+          {failureReasons.length === 0 ? (
+            <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">No hay mensajes fallidos registrados.</p>
+          ) : failureReasons.map((item, idx) => (
             <div key={idx} className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="font-semibold text-slate-800">{item.motivo}</span>

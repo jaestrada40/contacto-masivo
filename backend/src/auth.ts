@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, SetMetadata, UnauthorizedExc
 import { JwtService } from '@nestjs/jwt';
 import { Reflector } from '@nestjs/core';
 import { validateRequest } from 'twilio';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { UserRole } from '@prisma/client';
 export const Roles = (...roles: UserRole[]) => SetMetadata('roles', roles);
 export const Public = () => SetMetadata('isPublic', true);
@@ -37,6 +38,21 @@ export class TwilioWebhookGuard implements CanActivate {
     const protocol = request.headers['x-forwarded-proto'] || request.protocol;
     const url = `${protocol}://${request.get('host')}${request.originalUrl}`;
     if (!validateRequest(authToken, signature, url, request.body || {})) throw new UnauthorizedException('Firma Twilio inválida');
+    return true;
+  }
+}
+@Injectable()
+export class MetaWebhookGuard implements CanActivate {
+  canActivate(context: ExecutionContext) {
+    const request = context.switchToHttp().getRequest();
+    const secret = process.env.META_APP_SECRET;
+    const signature = request.headers['x-hub-signature-256'];
+    const rawBody: Buffer | undefined = request.rawBody;
+    if (!secret || typeof signature !== 'string' || !rawBody) throw new UnauthorizedException('Webhook Meta no configurado o sin firma válida');
+    const expected = `sha256=${createHmac('sha256', secret).update(rawBody).digest('hex')}`;
+    const suppliedBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    if (suppliedBuffer.length !== expectedBuffer.length || !timingSafeEqual(suppliedBuffer, expectedBuffer)) throw new UnauthorizedException('Firma del webhook Meta inválida');
     return true;
   }
 }

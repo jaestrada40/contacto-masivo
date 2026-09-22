@@ -1,0 +1,1 @@
+ALTER TYPE "ExecutionMode" ADD VALUE 'META_TEST';

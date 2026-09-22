@@ -2,16 +2,11 @@ import React, { useState } from 'react';
 import { 
   Menu, 
   Plus, 
-  RotateCcw, 
-  ShieldAlert, 
-  CheckCircle2, 
   Bell, 
-  ExternalLink,
-  Smartphone
+  ExternalLink
 } from 'lucide-react';
 import { User } from '../../types';
 import { ActiveView } from './Sidebar';
-import { storageService } from '../../services/storageService';
 
 interface HeaderProps {
   currentView: ActiveView;
@@ -42,15 +37,9 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
 }) => {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
-  const [resetConfirm, setResetConfirm] = useState(false);
 
   const viewInfo = VIEW_TITLES[currentView] || { title: 'Conecta Masivo', subtitle: 'Plataforma de difusión' };
 
-  const handleReset = () => {
-    storageService.resetDemoData();
-    setResetConfirm(false);
-    onNavigate('dashboard');
-  };
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 px-4 lg:px-8 py-3.5 flex items-center justify-between shadow-xs">
@@ -71,22 +60,6 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-2.5">
-        {/* Reset Demo button for quick evaluation */}
-        <button
-          onClick={() => setResetConfirm(true)}
-          title="Restablecer datos originales de demostración"
-          className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-600 hover:text-[#0C2A5A] hover:bg-slate-50 font-medium transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
-          <span>Restablecer Demo</span>
-        </button>
-
-        {/* Sandbox Indicator */}
-        <div className="hidden xl:flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-xs font-medium">
-          <Smartphone className="w-3.5 h-3.5 text-blue-600" />
-          <span>Twilio Sandbox: <strong className="font-semibold">+1 415 523 8886</strong></span>
-        </div>
-
         {/* Notifications Icon */}
         <button
           onClick={() => setShowNotificationModal(!showNotificationModal)}
@@ -110,35 +83,6 @@ export const Header: React.FC<HeaderProps> = ({
         )}
       </div>
 
-      {/* Reset confirmation modal */}
-      {resetConfirm && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-150">
-            <h3 className="font-bold text-slate-900 text-base mb-2 flex items-center gap-2">
-              <RotateCcw className="w-4 h-4 text-amber-500" />
-              ¿Restablecer datos de prueba?
-            </h3>
-            <p className="text-xs text-slate-600 leading-relaxed mb-5">
-              Esta acción recargará los 32 contactos de ejemplo, campañas históricas y registros de auditoría predeterminados.
-            </p>
-            <div className="flex items-center justify-end gap-2.5">
-              <button
-                onClick={() => setResetConfirm(false)}
-                className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleReset}
-                className="px-4 py-1.5 rounded-lg bg-[#0C2A5A] text-white text-xs font-semibold hover:bg-blue-900"
-              >
-                Sí, restablecer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Notifications Drawer/Popover */}
       {showNotificationModal && (
         <div className="fixed inset-0 z-40" onClick={() => setShowNotificationModal(false)}>
@@ -148,21 +92,9 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
               <span className="text-xs font-bold text-slate-800">Alertas Operativas</span>
-              <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">3 Nuevas</span>
             </div>
             <div className="space-y-2.5 text-xs">
-              <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-100 text-emerald-900">
-                <p className="font-semibold text-[11px]">Campaña Demo Completada</p>
-                <p className="text-[10px] text-emerald-700 mt-0.5">La difusión masiva de la Asamblea 2026 alcanzó un 96.1% de entrega efectiva.</p>
-              </div>
-              <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-100 text-blue-900">
-                <p className="font-semibold text-[11px]">Modo Sandbox Activo</p>
-                <p className="text-[10px] text-blue-700 mt-0.5">2 números autorizados para pruebas reales de Twilio disponibles en contactos.</p>
-              </div>
-              <div className="p-2.5 rounded-lg bg-amber-50/70 border border-amber-100 text-amber-900">
-                <p className="font-semibold text-[11px]">Baja Voluntaria Registrada</p>
-                <p className="text-[10px] text-amber-700 mt-0.5">Karla Beatriz Mendoza fue dada de baja de los envíos por consentimiento.</p>
-              </div>
+              <p className="text-[11px] text-slate-500">No hay notificaciones nuevas.</p>
             </div>
           </div>
         </div>

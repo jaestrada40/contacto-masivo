@@ -19,7 +19,8 @@ import {
 } from 'lucide-react';
 import { Campaign, MessageLog, User } from '../../types';
 import { ActiveView } from '../layout/Sidebar';
-import { storageService } from '../../services/storageService';
+import { api } from '../../services/api';
+import { showToast } from '../../services/toast';
 
 interface CampaignDetailViewProps {
   campaignId: string;
@@ -92,38 +93,14 @@ export const CampaignDetailView: React.FC<CampaignDetailViewProps> = ({
     document.body.removeChild(link);
   };
 
-  const handleRetryFailed = () => {
+  const handleRetryFailed = async () => {
     setIsRetrying(true);
-    setTimeout(() => {
-      // Simulate retrying failed messages
-      const updatedLogs = messageLogs.map(m => {
-        if (m.campanaId === campaign.id && m.estado === 'fallido') {
-          return {
-            ...m,
-            estado: 'entregado' as const,
-            error: undefined,
-            fechaHora: new Date().toLocaleTimeString(),
-          };
-        }
-        return m;
-      });
-
-      storageService.saveMessageLogs(updatedLogs);
-
-      // Update campaign stats
-      const failedCount = campaign.estadisticas.fallidos;
-      const updatedCampaign: Campaign = {
-        ...campaign,
-        estadisticas: {
-          ...campaign.estadisticas,
-          entregados: campaign.estadisticas.entregados + failedCount,
-          fallidos: 0,
-        },
-      };
-      storageService.saveCampaign(updatedCampaign, currentUser);
-
-      setIsRetrying(false);
-    }, 1000);
+    try {
+      await api.sendCampaign(campaign.id);
+      showToast('Se solicitó reintentar la campaña al servidor.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No fue posible reenviar la campaña.', 'error');
+    } finally { setIsRetrying(false); }
   };
 
   return (

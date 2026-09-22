@@ -12,11 +12,14 @@ import {
   MessageSquare,
   Smartphone,
   Calendar,
-  X
+  X,
+  Trash2
 } from 'lucide-react';
 import { Segment, Contact, User } from '../../types';
-import { storageService } from '../../services/storageService';
+import { api } from '../../services/api';
+import { showToast } from '../../services/toast';
 import { ActiveView } from '../layout/Sidebar';
+import { ConfirmDialog } from '../layout/ConfirmDialog';
 
 interface SegmentsViewProps {
   segments: Segment[];
@@ -24,6 +27,7 @@ interface SegmentsViewProps {
   currentUser: User;
   onNavigate: (view: ActiveView, extraId?: string) => void;
   onStartCampaignWithSegment: (segmentId: string) => void;
+  onDataChanged: () => Promise<void>;
 }
 
 export const SegmentsView: React.FC<SegmentsViewProps> = ({
@@ -32,6 +36,7 @@ export const SegmentsView: React.FC<SegmentsViewProps> = ({
   currentUser,
   onNavigate,
   onStartCampaignWithSegment,
+  onDataChanged,
 }) => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newNombre, setNewNombre] = useState('');
@@ -39,29 +44,22 @@ export const SegmentsView: React.FC<SegmentsViewProps> = ({
   const [newZona, setNewZona] = useState('');
   const [newSoloWA, setNewSoloWA] = useState(false);
   const [newSoloSMS, setNewSoloSMS] = useState(false);
+  const [segmentToDelete, setSegmentToDelete] = useState<Segment | null>(null);
 
   const getSegmentCount = (seg: Segment) => {
-    return storageService.getContactsForSegment(seg).length;
+    return contacts.filter(c => c.estado === 'activo' && (!seg.criterio.zona || c.zona === seg.criterio.zona) && (!seg.criterio.grupo || c.grupo.includes(seg.criterio.grupo)) && (!seg.criterio.soloWhatsApp || c.consentimientoWhatsApp) && (!seg.criterio.soloSMS || c.consentimientoSMS)).length;
   };
 
-  const handleCreateSegment = (e: React.FormEvent) => {
+  const handleCreateSegment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newNombre.trim()) return;
 
-    const newSeg: Segment = {
-      id: `seg-${Date.now().toString().slice(-4)}`,
-      nombre: newNombre.trim(),
-      descripcion: newDescripcion.trim() || 'Segmento personalizado según criterios dinámicos.',
-      criterio: {
-        soloActivos: true,
-        zona: newZona.trim() || undefined,
-        soloWhatsApp: newSoloWA || undefined,
-        soloSMS: newSoloSMS || undefined,
-      },
-      colorTag: 'blue',
-    };
-
-    storageService.createSegment(newSeg, currentUser);
+    try {
+      await api.createSegment({ name: newNombre.trim(), description: newDescripcion.trim() || undefined, isDynamic: true,
+        filters: { status: 'ACTIVE', zone: newZona.trim() || undefined, whatsappOptIn: newSoloWA || undefined, smsOptIn: newSoloSMS || undefined } });
+      await onDataChanged();
+      showToast('Segmento creado.', 'success');
+    } catch (error) { showToast(error instanceof Error ? error.message : 'No se pudo crear el segmento.', 'error'); return; }
     setShowCreateModal(false);
     setNewNombre('');
     setNewDescripcion('');
@@ -96,7 +94,7 @@ export const SegmentsView: React.FC<SegmentsViewProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {segments.map(seg => {
           const matchCount = getSegmentCount(seg);
-          const sampleMembers = storageService.getContactsForSegment(seg).slice(0, 3);
+          const sampleMembers = contacts.filter(c => c.estado === 'activo' && (!seg.criterio.zona || c.zona === seg.criterio.zona) && (!seg.criterio.soloWhatsApp || c.consentimientoWhatsApp) && (!seg.criterio.soloSMS || c.consentimientoSMS)).slice(0, 3);
 
           return (
             <div
@@ -169,7 +167,7 @@ export const SegmentsView: React.FC<SegmentsViewProps> = ({
               </div>
 
               {/* Action */}
-              <div className="mt-5 pt-3 border-t border-slate-100">
+              <div className="mt-5 pt-3 border-t border-slate-100 space-y-2">
                 {currentUser.rol !== 'consulta' ? (
                   <button
                     onClick={() => onStartCampaignWithSegment(seg.id)}
@@ -183,6 +181,7 @@ export const SegmentsView: React.FC<SegmentsViewProps> = ({
                     Modo solo lectura
                   </div>
                 )}
+                {currentUser.rol === 'admin' && <button onClick={() => setSegmentToDelete(seg)} className="w-full flex items-center justify-center gap-2 rounded-lg py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50"><Trash2 className="w-3.5 h-3.5" />Eliminar segmento</button>}
               </div>
             </div>
           );
@@ -277,6 +276,19 @@ export const SegmentsView: React.FC<SegmentsViewProps> = ({
           </div>
         </div>
       )}
+
+      {segmentToDelete && <ConfirmDialog
+        title="Eliminar segmento"
+        description={`¿Eliminar el segmento “${segmentToDelete.nombre}”? Las campañas que ya lo referencian conservarán su historial.`}
+        confirmLabel="Eliminar segmento"
+        destructive
+        onCancel={() => setSegmentToDelete(null)}
+        onConfirm={async () => {
+          try { await api.deleteSegment(segmentToDelete.id); await onDataChanged(); showToast('Segmento eliminado.', 'success'); }
+          catch (error) { showToast(error instanceof Error ? error.message : 'No se pudo eliminar el segmento.', 'error'); }
+          setSegmentToDelete(null);
+        }}
+      />}
     </div>
   );
 };

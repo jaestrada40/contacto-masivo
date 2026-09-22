@@ -31,6 +31,8 @@ enum CampaignChannel {
 enum ExecutionMode {
   DEMO
   TWILIO_TEST
+  META_TEST
+  ULTRAMSG
   LIVE
 }
 enum CampaignStatus {
@@ -75,7 +77,8 @@ model Contact {
   documentId String?
   phone String @unique
   email String?
-  departmentOrZone String?
+  department String?
+  zone String?
   groupName String?
   status ContactStatus @default(ACTIVE)
   whatsappOptIn Boolean @default(false)
@@ -110,6 +113,7 @@ model Campaign {
   message String
   whatsappTemplate String?
   variables Json?
+  contactIds Json?
   scheduledAt DateTime?
   sentAt DateTime?
   segmentId String?
@@ -154,6 +158,7 @@ model AuditLog {
 model AppSetting {
   id String @id @default(uuid())
   organizationName String
+  logoDataUrl String? @db.Text
   supportEmail String?
   supportPhone String?
   allowedStartHour Int @default(8)

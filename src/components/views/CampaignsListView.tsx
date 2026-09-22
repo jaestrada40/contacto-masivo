@@ -149,6 +149,7 @@ export const CampaignsListView: React.FC<CampaignsListViewProps> = ({
           <option value="all">Todos los modos</option>
           <option value="demo">Modo Demo</option>
           <option value="twilio_test">Modo Prueba Twilio</option>
+          <option value="meta_test">Modo Prueba Meta</option>
         </select>
 
         <select
@@ -213,9 +214,9 @@ export const CampaignsListView: React.FC<CampaignsListViewProps> = ({
 
                       <td className="py-3.5 px-3">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          cmp.modo === 'demo' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800 border border-blue-200'
+                          cmp.modo === 'demo' ? 'bg-amber-100 text-amber-800' : cmp.modo === 'meta_test' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-blue-100 text-blue-800 border border-blue-200'
                         }`}>
-                          {cmp.modo === 'demo' ? 'Demo (Simulada)' : 'Twilio Sandbox'}
+                          {cmp.modo === 'demo' ? 'Demo (Simulada)' : cmp.modo === 'meta_test' ? 'Meta Cloud API' : 'Twilio Sandbox'}
                         </span>
                       </td>
 

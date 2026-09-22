@@ -75,7 +75,7 @@ export class AuthService {
     return { success: true, user: this.currentUser };
   }
 
-  public async beginMfaSetup(): Promise<{ secret: string; periodSeconds: number }> {
+  public async beginMfaSetup(): Promise<{ secret: string; otpauthUri: string; periodSeconds: number }> {
     if (!this.pendingMfaToken || !this.mfaSetupRequired) throw new Error('No hay una configuración MFA pendiente.');
     return api.mfaSetup(this.pendingMfaToken);
   }
@@ -104,14 +104,10 @@ export class AuthService {
   }
 
   public async requestPasswordReset(email: string): Promise<{ success: boolean; message: string }> {
-    await new Promise(r => setTimeout(r, 400));
     if (!email || !email.includes('@')) {
       return { success: false, message: 'Ingrese un correo electrónico válido.' };
     }
-    return {
-      success: true,
-      message: `Se ha enviado un enlace seguro de restablecimiento a ${email}. (En entorno demo esto es una simulación).`,
-    };
+    return { success: false, message: 'La recuperación por correo aún no está configurada; contacte al administrador.' };
   }
 }
 

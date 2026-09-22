@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, 
   ArrowRight, 
@@ -17,13 +17,11 @@ import {
   Info, 
   DollarSign, 
   CheckCircle2, 
-  AlertCircle,
   HelpCircle,
   Radio
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { 
-  Campaign, 
   CampaignChannel, 
   CampaignMode, 
   CampaignType, 
@@ -31,11 +29,19 @@ import {
   Segment, 
   User 
 } from '../../types';
-import { storageService } from '../../services/storageService';
-import { twilioService } from '../../services/twilioMessagingService';
+import { api, toCampaign } from '../../services/api';
+import { showToast } from '../../services/toast';
 import { ActiveView } from '../layout/Sidebar';
 
 const WHATSAPP_TEMPLATES: { id: string; nombre: string; categoria: 'UTILITY' | 'MARKETING'; titulo: string; cuerpo: string; variables: string[]; idioma: string }[] = [];
+
+const segmentActiveCount = (segment: Segment, contacts: Contact[]) => contacts.filter(contact =>
+  contact.estado === 'activo' &&
+  (!segment.criterio.zona || contact.zona === segment.criterio.zona) &&
+  (!segment.criterio.grupo || contact.grupo.includes(segment.criterio.grupo)) &&
+  (!segment.criterio.soloWhatsApp || contact.consentimientoWhatsApp) &&
+  (!segment.criterio.soloSMS || contact.consentimientoSMS)
+).length;
 
 interface NewCampaignWizardViewProps {
   contacts: Contact[];
@@ -43,6 +49,7 @@ interface NewCampaignWizardViewProps {
   currentUser: User;
   onNavigate: (view: ActiveView, extraId?: string) => void;
   preselectedSegmentId?: string;
+  onDataChanged: () => Promise<void>;
 }
 
 export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
@@ -51,6 +58,7 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
   currentUser,
   onNavigate,
   preselectedSegmentId,
+  onDataChanged,
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
 
@@ -62,20 +70,25 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
   const [fechaProgramada, setFechaProgramada] = useState('');
 
   // Step 2: Recipients & Mode
-  const [selectedSegmentId, setSelectedSegmentId] = useState<string>(
-    preselectedSegmentId || segments[0]?.id || 'seg-todos-activos'
-  );
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string>(preselectedSegmentId || segments[0]?.id || '');
   const [modo, setModo] = useState<CampaignMode>('demo');
   const [isManualSelection, setIsManualSelection] = useState(false);
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
-  const [demoVolumeTarget, setDemoVolumeTarget] = useState<number>(785); // Up to 800 demo recipients
 
   // Step 3: Message Editor & Preview
   const [plantillaWA, setPlantillaWA] = useState<string>('recordatorio_evento');
-  const [mensajeTexto, setMensajeTexto] = useState<string>(
-    WHATSAPP_TEMPLATES[0].cuerpo
-  );
+  const [mensajeTexto, setMensajeTexto] = useState<string>('');
   const [previewContactIndex, setPreviewContactIndex] = useState<number>(0);
+  const [rates, setRates] = useState({ whatsappUtility: 0, whatsappMarketing: 0, sms: 0, loaded: false });
+
+  useEffect(() => {
+    api.settings().then((value: any) => setRates({
+      whatsappUtility: Number(value.whatsappUtilityRatePerThousand || 0),
+      whatsappMarketing: Number(value.whatsappMarketingRatePerThousand || 0),
+      sms: Number(value.smsRatePerThousand || 0),
+      loaded: true,
+    })).catch(() => setRates(previous => ({ ...previous, loaded: true })));
+  }, []);
 
   // Step 4: Review & Send
   const [consentConfirmed, setConsentConfirmed] = useState(false);
@@ -87,8 +100,6 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
     pct: 0,
     message: ''
   });
-  const [sendResultSuccess, setSendResultSuccess] = useState<Campaign | null>(null);
-  const [sendError, setSendError] = useState<string>('');
 
   // Calculations for Step 2 Recipients
   const selectedSegment = segments.find(s => s.id === selectedSegmentId) || segments[0];
@@ -97,7 +108,8 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
     if (isManualSelection) {
       return contacts.filter(c => selectedContactIds.includes(c.id));
     }
-    return storageService.getContactsForSegment(selectedSegment);
+    if (!selectedSegment) return [];
+    return contacts.filter(c => c.estado === 'activo' && (!selectedSegment.criterio.zona || c.zona === selectedSegment.criterio.zona) && (!selectedSegment.criterio.grupo || c.grupo.includes(selectedSegment.criterio.grupo)) && (!selectedSegment.criterio.soloWhatsApp || c.consentimientoWhatsApp) && (!selectedSegment.criterio.soloSMS || c.consentimientoSMS));
   }, [isManualSelection, selectedContactIds, selectedSegment, contacts]);
 
   // Exclude contacts without consent for selected channel
@@ -111,8 +123,13 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
         return;
       }
 
-      if (modo === 'twilio_test' && !c.esNumeroPruebaTwilio) {
-        excluded.push({ contact: c, reason: 'No está autorizado como Número de Prueba Twilio' });
+      if ((modo === 'twilio_test' || modo === 'meta_test') && !c.esNumeroPruebaTwilio) {
+        excluded.push({ contact: c, reason: 'No está autorizado para pruebas del proveedor' });
+        return;
+      }
+
+      if (modo === 'meta_test' && canal !== 'whatsapp') {
+        excluded.push({ contact: c, reason: 'La prueba de Meta solo admite WhatsApp' });
         return;
       }
 
@@ -138,15 +155,16 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
   }, [candidateContacts, canal, modo]);
 
   // Actual recipient count
-  const effectiveRecipientCount = modo === 'demo' ? demoVolumeTarget : eligibleRecipients.length;
+  const effectiveRecipientCount = eligibleRecipients.length;
 
   // Cost estimates
-  const settings = storageService.getSettings();
-  const unitCost = canal === 'whatsapp' 
-    ? (settings.costoWhatsAppUtilityMil / 1000) 
-    : canal === 'sms' 
-    ? (settings.costoSmsMil / 1000) 
-    : ((settings.costoWhatsAppUtilityMil + settings.costoSmsMil) / 1000);
+  const whatsappRate = tipo === 'promocion' ? rates.whatsappMarketing : rates.whatsappUtility;
+  const unitCost = canal === 'whatsapp'
+    ? whatsappRate / 1000
+    : canal === 'sms'
+    ? rates.sms / 1000
+    : (whatsappRate + rates.sms) / 1000;
+  const costConfigured = rates.loaded && (canal === 'whatsapp' ? whatsappRate > 0 : canal === 'sms' ? rates.sms > 0 : whatsappRate > 0 && rates.sms > 0);
 
   const estimatedTotalCost = Number((effectiveRecipientCount * unitCost).toFixed(2));
 
@@ -171,178 +189,38 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
   // Dispatch execution
   const executeCampaignDispatch = async () => {
     setIsSending(true);
-    setSendError('');
 
     try {
-      const campaignId = `cmp-${Date.now().toString().slice(-6)}`;
-      const newCampaign: Campaign = {
-        id: campaignId,
-        nombre: nombre.trim() || `Campaña ${tipo} ${new Date().toLocaleDateString()}`,
-        tipo,
-        canal,
-        programacion,
-        fechaProgramada: programacion === 'programado' ? fechaProgramada : undefined,
-        segmentoId: selectedSegment?.id,
-        segmentoNombre: selectedSegment?.nombre,
-        destinatariosIds: eligibleRecipients.map(c => c.id),
-        totalDestinatarios: effectiveRecipientCount,
-        mensaje: mensajeTexto,
-        plantillaWhatsApp: canal !== 'sms' ? plantillaWA : undefined,
-        modo,
-        estado: programacion === 'programado' ? 'programada' : 'enviando',
-        estadisticas: {
-          total: effectiveRecipientCount,
-          enviados: 0,
-          entregados: 0,
-          leidos: 0,
-          fallidos: 0,
-          pendientes: effectiveRecipientCount,
-          costoEstimado: estimatedTotalCost,
-        },
-        creadoPor: currentUser.id,
-        creadorNombre: currentUser.nombre,
-        fechaCreacion: new Date().toISOString(),
-      };
-
-      if (programacion === 'programado') {
-        storageService.saveCampaign({
-          ...newCampaign,
-          estado: 'programada',
-        }, currentUser);
-        setIsSending(false);
-        setShowConfirmModal(false);
-        setSendResultSuccess(newCampaign);
-        return;
-      }
-
-      // Live dispatch
-      if (modo === 'demo') {
-        const { stats, logs } = await twilioService.executeDemoDispatch(
-          newCampaign,
-          eligibleRecipients,
-          (current, total, pct, msg) => {
-            setSendingProgress({ current, total, pct, message: msg || 'Procesando...' });
-          }
-        );
-
-        const finalizedCampaign: Campaign = {
-          ...newCampaign,
-          estado: 'completada',
-          estadisticas: stats,
-          fechaInicioEnvio: new Date().toISOString(),
-          fechaFinEnvio: new Date().toISOString(),
-        };
-
-        storageService.saveCampaign(finalizedCampaign, currentUser);
-        storageService.addMessageLogs(logs);
-
-        setIsSending(false);
-        setShowConfirmModal(false);
-        setSendResultSuccess(finalizedCampaign);
-        confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-
-      } else {
-        // Twilio Sandbox mode
-        const { stats, logs } = await twilioService.executeTwilioTestDispatch(
-          newCampaign,
-          eligibleRecipients,
-          (current, total, pct, msg) => {
-            setSendingProgress({ current, total, pct, message: msg || 'Despachando vía Twilio...' });
-          }
-        );
-
-        const finalizedCampaign: Campaign = {
-          ...newCampaign,
-          estado: 'completada',
-          estadisticas: stats,
-          fechaInicioEnvio: new Date().toISOString(),
-          fechaFinEnvio: new Date().toISOString(),
-        };
-
-        storageService.saveCampaign(finalizedCampaign, currentUser);
-        storageService.addMessageLogs(logs);
-
-        setIsSending(false);
-        setShowConfirmModal(false);
-        setSendResultSuccess(finalizedCampaign);
-        confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
-      }
+      const created = await api.createCampaign({
+        name: nombre.trim() || `Campaña ${tipo} ${new Date().toLocaleDateString()}`,
+        type: ({ recordatorio: 'REMINDER', aviso: 'NOTICE', informativa: 'INFORMATIONAL', promocion: 'PROMOTION', urgente: 'URGENT' } as const)[tipo],
+        channel: ({ whatsapp: 'WHATSAPP', sms: 'SMS', ambos: 'BOTH' } as const)[canal],
+        executionMode: modo === 'twilio_test' ? 'TWILIO_TEST' : modo === 'meta_test' ? 'META_TEST' : 'DEMO',
+        message: mensajeTexto,
+        whatsappTemplate: modo === 'meta_test' ? 'hello_world' : canal !== 'sms' ? plantillaWA : undefined,
+        scheduledAt: programacion === 'programado' ? new Date(fechaProgramada).toISOString() : undefined,
+        segmentId: isManualSelection ? undefined : selectedSegment?.id,
+        contactIds: isManualSelection ? eligibleRecipients.map(c => c.id) : undefined,
+      });
+      const campaign = toCampaign(created);
+      if (programacion === 'ahora') await api.sendCampaign(campaign.id);
+      await onDataChanged();
+      setIsSending(false);
+      setShowConfirmModal(false);
+      showToast(programacion === 'programado' ? 'Campaña programada.' : 'Campaña creada y puesta en cola.', 'success');
+      confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
+      onNavigate('campanas');
 
     } catch (err: any) {
       setIsSending(false);
       setShowConfirmModal(false);
-      setSendError(err.message || 'Error inesperado durante el despacho de la campaña.');
+      showToast(err.message || 'Error inesperado durante el despacho de la campaña.', 'error');
     }
   };
 
   // Mock phone preview contact
   const previewContact = eligibleRecipients[previewContactIndex] || contacts[0];
-  const renderedPreviewText = previewContact 
-    ? twilioService.renderMessageVariables(mensajeTexto, previewContact)
-    : mensajeTexto;
-
-  if (sendResultSuccess) {
-    return (
-      <div className="max-w-2xl mx-auto py-10 px-4 text-center">
-        <div className="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-4 shadow-md">
-          <CheckCircle2 className="w-9 h-9" />
-        </div>
-        <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-          ¡Campaña Procesada Exitosamente!
-        </h2>
-        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-          {sendResultSuccess.programacion === 'programado'
-            ? 'La campaña ha sido agendada en el sistema para despacho automático.'
-            : 'La difusión se completó con métricas de entrega registradas en trazabilidad.'}
-        </p>
-
-        {sendResultSuccess.modo === 'demo' && (
-          <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">
-            <Info className="w-3.5 h-3.5 text-amber-600" />
-            <span>Modo Demo: No se enviaron mensajes reales. Simulación masiva generada.</span>
-          </div>
-        )}
-
-        <div className="mt-6 bg-white p-5 rounded-2xl border border-slate-200 text-left text-xs space-y-2 shadow-xs">
-          <div className="flex justify-between py-1 border-b border-slate-100">
-            <span className="text-slate-500">Nombre de Campaña:</span>
-            <span className="font-bold text-slate-800">{sendResultSuccess.nombre}</span>
-          </div>
-          <div className="flex justify-between py-1 border-b border-slate-100">
-            <span className="text-slate-500">Canal:</span>
-            <span className="font-bold text-slate-800 uppercase">{sendResultSuccess.canal}</span>
-          </div>
-          <div className="flex justify-between py-1 border-b border-slate-100">
-            <span className="text-slate-500">Destinatarios Totales:</span>
-            <span className="font-bold text-slate-800 font-mono">{sendResultSuccess.totalDestinatarios}</span>
-          </div>
-          <div className="flex justify-between py-1 border-b border-slate-100">
-            <span className="text-slate-500">Mensajes Entregados:</span>
-            <span className="font-bold text-emerald-600 font-mono">{sendResultSuccess.estadisticas.entregados}</span>
-          </div>
-          <div className="flex justify-between py-1">
-            <span className="text-slate-500">Costo Estimado:</span>
-            <span className="font-bold text-slate-800 font-mono">${sendResultSuccess.estadisticas.costoEstimado.toFixed(2)} USD</span>
-          </div>
-        </div>
-
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <button
-            onClick={() => onNavigate('campana_detalle', sendResultSuccess.id)}
-            className="px-5 py-2.5 bg-[#0C2A5A] text-white rounded-xl text-xs font-bold hover:bg-blue-900 transition-colors shadow-xs"
-          >
-            Ver reporte completo de la campaña
-          </button>
-          <button
-            onClick={() => onNavigate('campanas')}
-            className="px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50"
-          >
-            Volver a la lista
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const renderedPreviewText = previewContact ? mensajeTexto.replace(/{{\s*nombre\s*}}/gi, previewContact.nombres).replace(/{{\s*apellido\s*}}/gi, previewContact.apellidos).replace(/{{\s*telefono\s*}}/gi, previewContact.telefono) : mensajeTexto;
 
   return (
     <div className="space-y-6 pb-16">
@@ -368,27 +246,17 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
               ? 'bg-amber-50 text-amber-800 border-amber-200'
               : 'bg-indigo-50 text-indigo-800 border-indigo-200'
           }`}>
-            {modo === 'demo' ? 'Modo Demo (800 Sims)' : 'Modo Prueba Twilio'}
+            {modo === 'demo' ? 'Modo Demo · Simulación' : modo === 'meta_test' ? 'Modo Prueba Meta' : 'Modo Prueba Twilio'}
           </span>
         </div>
       </div>
-
-      {sendError && (
-        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5">
-          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-          <div>
-            <p className="font-bold">No se pudo ejecutar el envío:</p>
-            <p className="mt-0.5">{sendError}</p>
-          </div>
-        </div>
-      )}
 
       {/* Step Stepper Indicator */}
       <div className="grid grid-cols-4 gap-2 bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
         {[
           { num: 1, label: 'Información' },
           { num: 2, label: 'Destinatarios & Modo' },
-          { num: 3, label: 'Mensaje & Mockup' },
+          { num: 3, label: 'Mensaje & Vista previa' },
           { num: 4, label: 'Revisión & Envío' },
         ].map(s => {
           const isActive = currentStep === s.num;
@@ -491,11 +359,11 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                 </div>
 
                 <div
-                  onClick={() => setCanal('sms')}
+                  onClick={() => modo !== 'meta_test' && setCanal('sms')}
                   className={`p-4 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
                     canal === 'sms'
                       ? 'border-blue-500 bg-blue-50/50 shadow-xs'
-                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100/60'
+                      : modo === 'meta_test' ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed' : 'border-slate-200 bg-slate-50 hover:bg-slate-100/60'
                   }`}
                 >
                   <div className="p-2 rounded-lg bg-blue-100 text-blue-700">
@@ -508,11 +376,11 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                 </div>
 
                 <div
-                  onClick={() => setCanal('ambos')}
+                  onClick={() => modo !== 'meta_test' && setCanal('ambos')}
                   className={`p-4 rounded-xl border cursor-pointer transition-all flex items-start gap-3 ${
                     canal === 'ambos'
                       ? 'border-purple-500 bg-purple-50/50 shadow-xs'
-                      : 'border-slate-200 bg-slate-50 hover:bg-slate-100/60'
+                      : modo === 'meta_test' ? 'border-slate-200 bg-slate-100 opacity-50 cursor-not-allowed' : 'border-slate-200 bg-slate-50 hover:bg-slate-100/60'
                   }`}
                 >
                   <div className="p-2 rounded-lg bg-purple-100 text-purple-700">
@@ -595,18 +463,20 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6 max-w-3xl">
           <div>
             <h2 className="text-base font-bold text-slate-900">Paso 2: Segmentación y Modo de Ejecución</h2>
-            <p className="text-xs text-slate-500">Elija el segmento de afiliados y defina si ejecutará la simulación masiva o el Sandbox</p>
+            <p className="text-xs text-slate-500">Seleccione destinatarios reales de la base. Demo no envía mensajes; los modos de prueba usan credenciales configuradas.</p>
           </div>
 
-          {/* MODE SELECTOR (DEMO VS TWILIO) */}
+            {/* MODE SELECTOR */}
           <div className="p-4 rounded-xl border-2 border-dashed bg-slate-50 space-y-3">
             <label className="block font-bold text-slate-800 text-xs">
               Modo de Ejecución de la Campaña:
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                type="button"
                 onClick={() => setModo('demo')}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                aria-pressed={modo === 'demo'}
+                className={`w-full text-left p-3.5 rounded-xl border cursor-pointer transition-all ${
                   modo === 'demo'
                     ? 'border-amber-500 bg-amber-50/70 shadow-xs'
                     : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -622,13 +492,15 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Simula el envío masivo para <strong>800 personas</strong> sin enviar mensajes reales. Genera reportes realistas y no requiere saldo de Twilio.
+                  Registra una simulación solo para los contactos elegibles que existen en la base. No envía mensajes reales.
                 </p>
-              </div>
+              </button>
 
-              <div
+              <button
+                type="button"
                 onClick={() => setModo('twilio_test')}
-                className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                aria-pressed={modo === 'twilio_test'}
+                className={`w-full text-left p-3.5 rounded-xl border cursor-pointer transition-all ${
                   modo === 'twilio_test'
                     ? 'border-indigo-500 bg-indigo-50/70 shadow-xs'
                     : 'border-slate-200 bg-white hover:bg-slate-50'
@@ -646,7 +518,20 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                 <p className="text-[11px] text-indigo-800 leading-relaxed">
                   Solo permite enviar a contactos que tengan <strong>esNumeroPruebaTwilio = true</strong>. Requiere que el contacto se haya unido previamente al Sandbox de Twilio.
                 </p>
-              </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setModo('meta_test'); setCanal('whatsapp'); }}
+                aria-pressed={modo === 'meta_test'}
+                className={`w-full text-left p-3.5 rounded-xl border cursor-pointer transition-all ${modo === 'meta_test' ? 'border-emerald-500 bg-emerald-50/70 shadow-xs' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-extrabold text-emerald-950 text-xs flex items-center gap-1.5"><MessageSquare className="w-3.5 h-3.5 text-emerald-600" />Modo Prueba Meta</span>
+                  <span className="bg-emerald-200/60 text-emerald-900 text-[10px] font-bold px-2 py-0.5 rounded-full">Cloud API</span>
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-relaxed">Envía la plantilla oficial hello_world al teléfono autorizado. No usa el texto personalizado de la campaña.</p>
+              </button>
             </div>
 
             {modo === 'twilio_test' && (
@@ -658,6 +543,12 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                     Para WhatsApp Sandbox, el contacto debe haberse unido previamente enviando el código de Twilio (ej. <em>join &lt;palabra&gt;</em> al <strong>+1 415 523 8886</strong>).
                   </p>
                 </div>
+              </div>
+            )}
+            {modo === 'meta_test' && (
+              <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-900 text-xs flex items-start gap-2">
+                <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                <p><strong>Prueba de Meta:</strong> solo WhatsApp, solo contactos autorizados para prueba y la plantilla fija <code>hello_world</code> en inglés. Meta enviará “Hello World”; el mensaje que escribas abajo no se enviará.</p>
               </div>
             )}
           </div>
@@ -672,7 +563,7 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
             >
               {segments.map(seg => (
                 <option key={seg.id} value={seg.id}>
-                  {seg.nombre} ({storageService.getContactsForSegment(seg).length} contactos en muestra)
+                  {seg.nombre} ({segmentActiveCount(seg, contacts)} contacto{segmentActiveCount(seg, contacts) === 1 ? '' : 's'} activo{segmentActiveCount(seg, contacts) === 1 ? '' : 's'})
                 </option>
               ))}
             </select>
@@ -688,9 +579,9 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                 </span>
               </div>
               <div className="text-right">
-                <span className="text-slate-500 block">Costo aproximado ({canal}):</span>
+                <span className="text-slate-500 block">{modo === 'demo' ? 'Costo del envío:' : `Costo estimado (${canal}):`}</span>
                 <span className="text-base font-bold text-slate-800 font-mono">
-                  ${estimatedTotalCost.toFixed(2)} USD
+                {modo === 'demo' ? 'Sin costo real (simulación)' : modo === 'meta_test' ? 'Tarifas de Meta (si aplica)' : costConfigured ? `$${estimatedTotalCost.toFixed(2)} USD*` : 'Tarifa no configurada'}
                 </span>
               </div>
             </div>
@@ -699,7 +590,7 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
             <div className="pt-2 border-t border-slate-200 flex items-center justify-between">
               <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                {eligibleRecipients.length} contactos cumplen 100% las políticas de consentimiento
+                {eligibleRecipients.length} {eligibleRecipients.length === 1 ? 'contacto cumple' : 'contactos cumplen'} las políticas de consentimiento
               </span>
               {excludedRecipients.length > 0 && (
                 <span className="text-rose-600 font-semibold flex items-center gap-1">
@@ -971,7 +862,7 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                 <span className={`font-bold px-2 py-0.5 rounded text-[11px] ${
                   modo === 'demo' ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'
                 }`}>
-                  {modo === 'demo' ? 'Modo Demo (800 Sims)' : 'Modo Prueba Twilio Sandbox'}
+                  {modo === 'demo' ? 'Modo Demo · Simulación (no envía mensajes)' : modo === 'meta_test' ? 'Modo Prueba Meta · Plantilla hello_world' : 'Modo Prueba Twilio Sandbox'}
                 </span>
               </div>
               <div>
@@ -993,15 +884,16 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
               <div>
                 <span className="text-slate-400 block text-[11px]">Costo Estimado:</span>
                 <span className="font-bold text-emerald-700 font-mono text-sm">
-                  ${estimatedTotalCost.toFixed(2)} USD
+                  {modo === 'demo' ? 'Sin costo real (simulación)' : costConfigured ? `$${estimatedTotalCost.toFixed(2)} USD*` : 'Tarifa no configurada'}
                 </span>
               </div>
             </div>
+            {modo === 'twilio_test' && costConfigured && <p className="mt-3 text-[10px] text-slate-500">*Estimado según las tarifas configuradas; el cargo final lo determina Twilio.</p>}
 
             <div className="pt-3 border-t border-slate-200">
               <span className="text-slate-400 block text-[11px] mb-1">Mensaje que recibirán:</span>
               <p className="p-3 bg-white rounded-lg border border-slate-200 text-slate-800 whitespace-pre-line leading-relaxed">
-                {mensajeTexto}
+                {modo === 'meta_test' ? 'Hello World (plantilla de prueba aprobada por Meta; idioma en_US)' : mensajeTexto}
               </p>
             </div>
           </div>
@@ -1057,16 +949,16 @@ export const NewCampaignWizardView: React.FC<NewCampaignWizardViewProps> = ({
                 <Send className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">¿Confirmar Despacho Masivo?</h3>
-                <p className="text-xs text-slate-500">Esta acción iniciará la cola de envío en el sistema</p>
+                <h3 className="text-base font-bold text-slate-900">¿Confirmar {modo === 'demo' ? 'simulación' : 'envío de prueba'}?</h3>
+                <p className="text-xs text-slate-500">{modo === 'demo' ? 'Se registrarán resultados simulados; no saldrán mensajes.' : 'Se enviará por Twilio a los contactos elegibles del Sandbox.'}</p>
               </div>
             </div>
 
             <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5 mb-4">
               <p><strong>Campaña:</strong> {nombre}</p>
               <p><strong>Destinatarios:</strong> {effectiveRecipientCount.toLocaleString()} contactos</p>
-              <p><strong>Modo:</strong> {modo === 'demo' ? 'Demostración funcional simulada' : 'Twilio Sandbox oficial'}</p>
-              <p><strong>Costo calculado:</strong> ${estimatedTotalCost.toFixed(2)} USD</p>
+              <p><strong>Modo:</strong> {modo === 'demo' ? 'Demo (sin envío real)' : 'Prueba Twilio Sandbox'}</p>
+              <p><strong>Estimación:</strong> {modo === 'demo' ? 'Sin costo real (simulación)' : costConfigured ? `$${estimatedTotalCost.toFixed(2)} USD*` : 'Tarifa no configurada; Twilio podría cobrar'}</p>
             </div>
 
             {isSending ? (

@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import QRCode from 'qrcode';
 import { 
   Lock, 
   Mail, 
   ShieldCheck, 
-  CheckCircle2, 
-  AlertCircle, 
   ArrowRight,
   Smartphone,
   Eye,
@@ -12,41 +11,49 @@ import {
   Sparkles
 } from 'lucide-react';
 import { authService } from '../../services/authService';
-import { UserRole } from '../../types';
-import { storageService } from '../../services/storageService';
+import { api } from '../../services/api';
+import { showToast } from '../../services/toast';
 
 interface LoginViewProps {
   onLoginSuccess: () => void;
 }
 
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
-  const [email, setEmail] = useState(authService.getRememberedEmail() || 'admin@conectamasivo.demo');
-  const [password, setPassword] = useState('Demo123!');
+  const [email, setEmail] = useState(authService.getRememberedEmail() || '');
+  const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(Boolean(authService.getRememberedEmail()));
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
   const [mfaActive, setMfaActive] = useState(false);
   const [mfaSetupRequired, setMfaSetupRequired] = useState(false);
   const [mfaSecret, setMfaSecret] = useState('');
+  const [mfaQrDataUrl, setMfaQrDataUrl] = useState('');
   const [mfaCode, setMfaCode] = useState('');
-  const [logoDataUrl] = useState<string | undefined>(() => storageService.getSettings().logoDataUrl);
+  const [mfaSecondsLeft, setMfaSecondsLeft] = useState(30);
+  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>();
+
+  React.useEffect(() => { api.branding().then(value => setLogoDataUrl(value.logoDataUrl || undefined)).catch(() => setLogoDataUrl(undefined)); }, []);
+
+  useEffect(() => {
+    if (!mfaActive) return;
+    const updateCountdown = () => setMfaSecondsLeft(30 - (Math.floor(Date.now() / 1000) % 30));
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 250);
+    return () => window.clearInterval(timer);
+  }, [mfaActive]);
 
   // Forgot password modal state
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotStatus, setForgotStatus] = useState<{ message?: string; success?: boolean }>({});
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMessage('');
-
     if (!email.trim()) {
-      setErrorMessage('Por favor ingrese su correo electrónico institucional.');
+      showToast('Por favor ingrese su correo electrónico institucional.', 'error');
       return;
     }
     if (!password) {
-      setErrorMessage('Por favor ingrese su contraseña.');
+      showToast('Por favor ingrese su contraseña.', 'error');
       return;
     }
 
@@ -60,41 +67,30 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       setMfaActive(true);
       setMfaSetupRequired(Boolean(result.mfaSetupRequired));
       if (result.mfaSetupRequired) {
-        try { const setup = await authService.beginMfaSetup(); setMfaSecret(setup.secret); }
-        catch (error) { setErrorMessage(error instanceof Error ? error.message : 'No fue posible iniciar MFA.'); }
+        try {
+          const setup = await authService.beginMfaSetup();
+          setMfaSecret(setup.secret);
+          setMfaQrDataUrl(await QRCode.toDataURL(setup.otpauthUri, { width: 220, margin: 2, errorCorrectionLevel: 'M' }));
+        }
+        catch (error) { showToast(error instanceof Error ? error.message : 'No fue posible iniciar MFA.', 'error'); }
       }
     } else {
-      setErrorMessage(result.error || 'Credenciales inválidas.');
+      showToast(result.error || 'Credenciales inválidas.', 'error');
     }
   };
 
   const handleMfa = async (event: React.FormEvent) => {
-    event.preventDefault(); setLoading(true); setErrorMessage('');
+    event.preventDefault(); setLoading(true);
     const result = await authService.completeMfa(mfaCode);
     setLoading(false);
-    if (result.success) onLoginSuccess(); else setErrorMessage(result.error || 'Código MFA inválido.');
-  };
-
-  const handleQuickDemoFill = (role: UserRole) => {
-    switch (role) {
-      case 'admin':
-        setEmail('admin@conectamasivo.demo');
-        break;
-      case 'operador':
-        setEmail('operador@conectamasivo.demo');
-        break;
-      case 'consulta':
-        setEmail('consulta@conectamasivo.demo');
-        break;
-    }
-    setPassword('Demo123!');
-    setErrorMessage('');
+    if (result.success) onLoginSuccess(); else showToast(result.error || 'Código MFA inválido.', 'error');
   };
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await authService.requestPasswordReset(forgotEmail);
-    setForgotStatus(res);
+    showToast(res.message, res.success ? 'success' : 'error');
+    setShowForgotModal(false);
   };
 
   return (
@@ -113,21 +109,21 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <p className="text-xs text-slate-500 mt-0.5">Acceda con su cuenta asignada para gestionar campañas</p>
           </div>
 
-          {errorMessage && (
-            <div className="mb-5 p-3 rounded-lg bg-rose-50 border border-rose-200 flex items-start gap-2.5 text-rose-800 text-xs">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-
           {mfaActive ? (
           <form onSubmit={handleMfa} className="space-y-4">
             <div className="rounded-lg bg-blue-50 border border-blue-100 p-3 text-xs text-blue-900">
               <p className="font-bold">Verificación MFA</p>
-              {mfaSetupRequired && <><p className="mt-1">Configure esta clave secreta en su autenticador compatible. No comparta esta clave.</p><code className="block mt-2 break-all select-all bg-white p-2 rounded text-[11px]">{mfaSecret}</code></>}
+              {mfaSetupRequired && <>
+                <p className="mt-1">Escanee este QR desde Google Authenticator, Microsoft Authenticator o una app compatible. No comparta el QR ni la clave.</p>
+                {mfaQrDataUrl ? <img src={mfaQrDataUrl} alt="QR para configurar MFA en una aplicación autenticadora" className="mx-auto mt-3 h-56 w-56 rounded-lg border border-slate-200 bg-white p-2" /> : <p className="mt-2 text-center text-slate-500">Generando QR…</p>}
+                <details className="mt-2"><summary className="cursor-pointer text-blue-700">No puedo escanearlo</summary><code className="mt-2 block break-all select-all bg-white p-2 rounded text-[11px]">{mfaSecret}</code></details>
+              </>}
               <p className="mt-2">Ingrese el código de seis dígitos. Cada código dura 30 segundos.</p>
             </div>
             <input aria-label="Código MFA" inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={mfaCode} onChange={event => setMfaCode(event.target.value.replace(/\D/g, ''))} placeholder="000000" required className="w-full px-3 py-2.5 text-center tracking-[0.4em] font-mono border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <p role="timer" aria-live="polite" className={`-mt-2 text-center text-xs font-medium ${mfaSecondsLeft <= 5 ? 'text-amber-700' : 'text-slate-500'}`}>
+              El código cambia en <span className="font-mono font-bold">{mfaSecondsLeft}</span> segundos
+            </p>
             <button type="submit" disabled={loading || mfaCode.length !== 6 || (mfaSetupRequired && !mfaSecret)} className="w-full flex items-center justify-center gap-2 bg-[#0C2A5A] text-white py-2.5 px-4 rounded-lg text-xs font-bold disabled:opacity-60">{loading ? 'Validando…' : 'Validar código'}</button>
             <button type="button" onClick={() => { setMfaActive(false); setMfaCode(''); setMfaSecret(''); }} className="w-full text-xs text-blue-700 hover:underline">Volver al inicio de sesión</button>
           </form>
@@ -221,41 +217,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             </button>
           </form>
 
-          {/* Demo User Fast Fill Section */}
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                Acceso Rápido de Demostración:
-              </span>
-              <span className="text-[10px] text-slate-400 font-mono">Demo123!</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemoFill('admin')}
-                className="px-2 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/60 text-left transition-all group"
-              >
-                <div className="text-[11px] font-bold text-slate-800 group-hover:text-blue-700">Admin</div>
-                <div className="text-[9px] text-slate-400 truncate">admin@...</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoFill('operador')}
-                className="px-2 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/60 text-left transition-all group"
-              >
-                <div className="text-[11px] font-bold text-slate-800 group-hover:text-blue-700">Operador</div>
-                <div className="text-[9px] text-slate-400 truncate">operador@...</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemoFill('consulta')}
-                className="px-2 py-1.5 rounded-lg border border-slate-200 hover:border-blue-500 hover:bg-blue-50/60 text-left transition-all group"
-              >
-                <div className="text-[11px] font-bold text-slate-800 group-hover:text-blue-700">Consulta</div>
-                <div className="text-[9px] text-slate-400 truncate">consulta@...</div>
-              </button>
-            </div>
-          </div>
           </>}
         </div>
 
@@ -275,12 +236,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               Le enviaremos un correo con instrucciones para restablecer su acceso seguro.
             </p>
 
-            {forgotStatus.message ? (
-              <div className={`p-3 rounded-lg text-xs mb-4 ${forgotStatus.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-rose-50 text-rose-800'}`}>
-                {forgotStatus.message}
-              </div>
-            ) : (
-              <form onSubmit={handleForgotPassword} className="space-y-3">
+            <form onSubmit={handleForgotPassword} className="space-y-3">
                 <input
                   type="email"
                   value={forgotEmail}
@@ -305,22 +261,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   </button>
                 </div>
               </form>
-            )}
-
-            {forgotStatus.message && (
-              <div className="text-right pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowForgotModal(false);
-                    setForgotStatus({});
-                  }}
-                  className="px-4 py-1.5 text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg"
-                >
-                  Volver al inicio de sesión
-                </button>
-              </div>
-            )}
           </div>
         </div>
       )}

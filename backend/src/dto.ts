@@ -11,7 +11,9 @@ export class StatusDto { @IsBoolean() isActive!: boolean; }
 export class ContactDto {
  @IsString() firstName!: string; @IsString() lastName!: string; @IsOptional() @IsString() documentId?: string;
  @Matches(/^\+[1-9]\d{7,14}$/, { message: 'phone debe tener formato E.164' }) phone!: string;
- @IsOptional() @IsEmail() email?: string; @IsOptional() @IsString() departmentOrZone?: string; @IsOptional() @IsString() groupName?: string;
+ @IsOptional() @IsEmail() email?: string; @IsOptional() @IsString() department?: string; @IsOptional() @IsString() zone?: string;
+ @IsOptional() @IsString() departmentOrZone?: string; // compatibilidad temporal con clientes anteriores
+ @IsOptional() @IsString() groupName?: string;
  @IsOptional() @IsEnum(ContactStatus) status?: ContactStatus; @IsOptional() @IsBoolean() whatsappOptIn?: boolean; @IsOptional() @IsBoolean() smsOptIn?: boolean;
  @IsOptional() @IsString() consentSource?: string; @IsOptional() @IsBoolean() isTwilioTestNumber?: boolean;
 }
@@ -23,4 +25,4 @@ export class CampaignDto {
  @IsString() @MinLength(1) message!: string; @IsOptional() @IsString() whatsappTemplate?: string; @IsOptional() @IsObject() variables?: Record<string, string>;
  @IsOptional() @IsString() scheduledAt?: string; @IsOptional() @IsString() segmentId?: string; @IsOptional() @IsArray() contactIds?: string[];
 }
-export class SettingsDto { @IsOptional() @IsString() organizationName?: string; @IsOptional() @IsEmail() supportEmail?: string; @IsOptional() @IsString() supportPhone?: string; @IsOptional() @IsInt() @Min(0) allowedStartHour?: number; @IsOptional() @IsInt() @Min(0) allowedEndHour?: number; @IsOptional() @Type(() => Number) whatsappUtilityRatePerThousand?: number; @IsOptional() @Type(() => Number) whatsappMarketingRatePerThousand?: number; @IsOptional() @Type(() => Number) smsRatePerThousand?: number; }
+export class SettingsDto { @IsOptional() @IsString() organizationName?: string; @IsOptional() @IsString() logoDataUrl?: string | null; @IsOptional() @IsEmail() supportEmail?: string; @IsOptional() @IsString() supportPhone?: string; @IsOptional() @IsInt() @Min(0) allowedStartHour?: number; @IsOptional() @IsInt() @Min(0) allowedEndHour?: number; @IsOptional() @Type(() => Number) whatsappUtilityRatePerThousand?: number; @IsOptional() @Type(() => Number) whatsappMarketingRatePerThousand?: number; @IsOptional() @Type(() => Number) smsRatePerThousand?: number; }

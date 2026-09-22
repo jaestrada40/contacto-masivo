@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Users, 
   MessageSquare, 
@@ -12,18 +12,18 @@ import {
   UserPlus, 
   Upload, 
   TrendingUp, 
-  ArrowUpRight,
   ShieldCheck,
   ChevronRight,
   Sparkles,
   Radio
 } from 'lucide-react';
-import { Campaign, Contact, User } from '../../types';
+import { Campaign, Contact, MessageLog, User } from '../../types';
 import { ActiveView } from '../layout/Sidebar';
 
 interface DashboardViewProps {
   contacts: Contact[];
   campaigns: Campaign[];
+  messageLogs: MessageLog[];
   onNavigate: (view: ActiveView, extraId?: string) => void;
   currentUser: User;
   onOpenImportModal: () => void;
@@ -33,6 +33,7 @@ interface DashboardViewProps {
 export const DashboardView: React.FC<DashboardViewProps> = ({
   contacts,
   campaigns,
+  messageLogs,
   onNavigate,
   currentUser,
   onOpenImportModal,
@@ -40,39 +41,50 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 }) => {
   // Aggregate KPI Calculations
   const activeContactsCount = contacts.filter(c => c.estado === 'activo').length;
-  // Scaled display to reflect ~800 members organization as requested in the prompt
-  const simulatedTotalCommunity = 785; 
-
   const waConsentCount = contacts.filter(c => c.consentimientoWhatsApp && c.estado === 'activo').length;
   const smsConsentCount = contacts.filter(c => c.consentimientoSMS && c.estado === 'activo').length;
+  const totalContacts = contacts.length;
+  const waConsentRate = totalContacts ? ((waConsentCount / totalContacts) * 100).toFixed(1) : '0.0';
+  const smsConsentRate = totalContacts ? ((smsConsentCount / totalContacts) * 100).toFixed(1) : '0.0';
 
-  const totalEnviados = campaigns.reduce((sum, c) => sum + (c.estadisticas?.enviados || 0), 0);
-  const totalEntregados = campaigns.reduce((sum, c) => sum + (c.estadisticas?.entregados || 0), 0);
-  const totalLeidos = campaigns.reduce((sum, c) => sum + (c.estadisticas?.leidos || 0), 0);
-  const totalFallidos = campaigns.reduce((sum, c) => sum + (c.estadisticas?.fallidos || 0), 0);
-  const totalPendientes = campaigns.reduce((sum, c) => sum + (c.estadisticas?.pendientes || 0), 0);
+  const totalEnviados = messageLogs.filter(m => ['enviado', 'entregado', 'leido'].includes(m.estado)).length;
+  const totalEntregados = messageLogs.filter(m => ['entregado', 'leido'].includes(m.estado)).length;
+  const totalLeidos = messageLogs.filter(m => m.estado === 'leido').length;
+  const totalFallidos = messageLogs.filter(m => m.estado === 'fallido').length;
+  const totalPendientes = messageLogs.filter(m => ['pendiente', 'en_cola'].includes(m.estado)).length;
 
-  const deliveryRate = totalEnviados > 0 ? ((totalEntregados / totalEnviados) * 100).toFixed(1) : '97.2';
-  const readRate = totalEntregados > 0 ? ((totalLeidos / totalEntregados) * 100).toFixed(1) : '85.4';
+  const deliveryRate = totalEnviados > 0 ? ((totalEntregados / totalEnviados) * 100).toFixed(1) : '0.0';
+  const readRate = totalEntregados > 0 ? ((totalLeidos / totalEntregados) * 100).toFixed(1) : '0.0';
+
+  const campaignMetrics = (campaignId: string) => {
+    const logs = messageLogs.filter(m => m.campanaId === campaignId);
+    return {
+      total: logs.length,
+      delivered: logs.filter(m => ['entregado', 'leido'].includes(m.estado)).length,
+      read: logs.filter(m => m.estado === 'leido').length,
+      failed: logs.filter(m => m.estado === 'fallido').length,
+      cost: logs.reduce((sum, m) => sum + m.costoEstimado, 0),
+    };
+  };
 
   const recentCampaigns = campaigns.slice(0, 5);
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Top Welcome & Community Simulation Banner */}
+      {/* Top Welcome and Current Data Banner */}
       <div className="bg-white border border-slate-200 border-l-4 border-l-[#0F2747] rounded-xl p-6 text-[#172033] shadow-xs relative overflow-hidden">
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
           <div>
               <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold mb-2 border border-blue-100">
               <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-              <span>Demostración Funcional Conecta Masivo</span>
+              <span>Resumen de actividad</span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight">
               Bienvenido(a), {currentUser.nombre}
             </h1>
             <p className="text-xs sm:text-sm text-slate-600 mt-1 max-w-2xl leading-relaxed">
-              Sistema preparado con <strong>{simulatedTotalCommunity} contactos comunitarios</strong> registrados voluntariamente para difusión institucional por WhatsApp verificado y SMS masivo.
+              {totalContacts ? <>Hay <strong>{totalContacts} contactos</strong> registrados en la base.</> : 'Aún no hay contactos registrados.'}
             </p>
           </div>
 
@@ -124,13 +136,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-extrabold text-slate-900">{simulatedTotalCommunity}</span>
-            <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md flex items-center">
-              <ArrowUpRight className="w-3 h-3" /> +100%
-            </span>
+            <span className="text-2xl font-extrabold text-slate-900">{activeContactsCount}</span>
           </div>
           <p className="mt-1 text-xs text-slate-500">
-            {activeContactsCount} verificados en muestra local
+            contactos activos
           </p>
         </div>
 
@@ -146,13 +155,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-extrabold text-slate-900">712</span>
-            <span className="text-xs text-slate-400 font-medium">/ {simulatedTotalCommunity}</span>
+            <span className="text-2xl font-extrabold text-slate-900">{waConsentCount}</span>
+            <span className="text-xs text-slate-400 font-medium">/ {totalContacts}</span>
           </div>
           <div className="mt-2 w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: '90.7%' }}></div>
+            <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${waConsentRate}%` }}></div>
           </div>
-          <p className="mt-1.5 text-[11px] text-emerald-700 font-medium">90.7% con autorización expresa</p>
+          <p className="mt-1.5 text-[11px] text-emerald-700 font-medium">{waConsentRate}% con autorización expresa</p>
         </div>
 
         {/* Card 3: Consentimiento SMS */}
@@ -167,13 +176,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
-            <span className="text-2xl font-extrabold text-slate-900">748</span>
-            <span className="text-xs text-slate-400 font-medium">/ {simulatedTotalCommunity}</span>
+            <span className="text-2xl font-extrabold text-slate-900">{smsConsentCount}</span>
+            <span className="text-xs text-slate-400 font-medium">/ {totalContacts}</span>
           </div>
           <div className="mt-2 w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: '95.2%' }}></div>
+            <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${smsConsentRate}%` }}></div>
           </div>
-          <p className="mt-1.5 text-[11px] text-indigo-700 font-medium">95.2% cobertura móvil por SMS</p>
+          <p className="mt-1.5 text-[11px] text-indigo-700 font-medium">{smsConsentRate}% con autorización SMS</p>
         </div>
 
         {/* Card 4: Campañas Enviadas Este Mes */}
@@ -182,7 +191,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="bg-white p-5 rounded-xl border border-slate-200 hover:border-purple-400 shadow-xs hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Campañas del Mes</span>
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Campañas registradas</span>
             <div className="w-9 h-9 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center group-hover:scale-105 transition-transform">
               <Send className="w-5 h-5" />
             </div>
@@ -204,7 +213,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
               Desglose Acumulado de Mensajes
             </h3>
-            <p className="text-xs text-slate-500">Total despachado a través de WhatsApp y SMS en marzo 2026</p>
+            <p className="text-xs text-slate-500">Actividad registrada en todos los canales</p>
           </div>
           <button 
             onClick={() => onNavigate('historial')}
@@ -222,7 +231,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <span>Enviados</span>
             </div>
             <div className="mt-1 text-xl font-black text-slate-900">{totalEnviados.toLocaleString()}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">100% despachados</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Total en registros</div>
           </div>
 
           <div className="p-3.5 rounded-lg bg-emerald-50/60 border border-emerald-100">
@@ -273,17 +282,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <p className="text-xs text-slate-500">Comparativa de entrega y lectura por campaña ejecutada</p>
             </div>
             <span className="text-xs bg-slate-100 text-slate-600 font-semibold px-2.5 py-1 rounded-md">
-              Marzo 2026
+              {campaigns.length} campañas
             </span>
           </div>
 
           {/* Simple Clean Bar Chart Visualizer */}
           <div className="space-y-4">
             {campaigns.slice(0, 4).map(cmp => {
-              const total = cmp.estadisticas.total || 1;
-              const deliveredPct = Math.round((cmp.estadisticas.entregados / total) * 100);
-              const readPct = Math.round((cmp.estadisticas.leidos / total) * 100);
-              const failedPct = Math.round((cmp.estadisticas.fallidos / total) * 100);
+              const metrics = campaignMetrics(cmp.id);
+              const total = metrics.total || 1;
+              const deliveredPct = Math.round((metrics.delivered / total) * 100);
+              const readPct = Math.round((metrics.read / total) * 100);
+              const failedPct = Math.round((metrics.failed / total) * 100);
 
               return (
                 <div key={cmp.id} className="p-3 rounded-lg border border-slate-100 hover:bg-slate-50/70 transition-colors">
@@ -298,7 +308,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <span className="text-xs font-bold text-slate-800 truncate max-w-xs">{cmp.nombre}</span>
                     </div>
                     <div className="text-xs font-semibold text-slate-600">
-                      {cmp.estadisticas.entregados.toLocaleString()} / {total.toLocaleString()} entregados ({deliveredPct}%)
+                      {metrics.delivered.toLocaleString()} / {metrics.total.toLocaleString()} entregados ({deliveredPct}%)
                     </div>
                   </div>
 
@@ -307,19 +317,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <div 
                       style={{ width: `${deliveredPct - (cmp.canal === 'whatsapp' ? readPct : 0)}%` }} 
                       className="bg-emerald-400 h-full" 
-                      title={`Entregados: ${cmp.estadisticas.entregados}`}
+                      title={`Entregados: ${metrics.delivered}`}
                     />
                     {cmp.canal === 'whatsapp' && (
                       <div 
                         style={{ width: `${readPct}%` }} 
                         className="bg-blue-600 h-full" 
-                        title={`Leídos: ${cmp.estadisticas.leidos}`}
+                        title={`Leídos: ${metrics.read}`}
                       />
                     )}
                     <div 
                       style={{ width: `${failedPct}%` }} 
                       className="bg-rose-400 h-full" 
-                      title={`Fallidos: ${cmp.estadisticas.fallidos}`}
+                      title={`Fallidos: ${metrics.failed}`}
                     />
                   </div>
 
@@ -332,16 +342,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       {cmp.canal === 'whatsapp' && (
                         <span className="flex items-center gap-1">
                           <span className="w-2 h-2 rounded-full bg-blue-600 inline-block"></span>
-                          Leídos ({cmp.estadisticas.leidos})
+                          Leídos ({metrics.read})
                         </span>
                       )}
                       <span className="flex items-center gap-1">
                         <span className="w-2 h-2 rounded-full bg-rose-400 inline-block"></span>
-                        Fallidos ({cmp.estadisticas.fallidos})
+                        Fallidos ({metrics.failed})
                       </span>
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono">
-                      Costo: ${cmp.estadisticas.costoEstimado.toFixed(2)} USD
+                      Costo registrado: ${metrics.cost.toFixed(2)} USD
                     </span>
                   </div>
                 </div>
@@ -352,7 +362,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
             <span className="flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              <span>Verificación de consentimiento 100% activa en todas las difusiones</span>
+              <span>El envío requiere consentimiento vigente para el canal seleccionado</span>
             </span>
             <button 
               onClick={() => onNavigate('reportes')}

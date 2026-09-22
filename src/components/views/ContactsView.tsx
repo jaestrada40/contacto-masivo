@@ -16,6 +16,7 @@ import {
   ChevronRight,
   ShieldCheck,
   AlertCircle,
+  Trash2,
   PhoneCall,
   Mail,
   MapPin,
@@ -23,7 +24,9 @@ import {
   Sparkles
 } from 'lucide-react';
 import { Contact, User, UserRole } from '../../types';
-import { storageService } from '../../services/storageService';
+import { api } from '../../services/api';
+import { showToast } from '../../services/toast';
+import { ConfirmDialog } from '../layout/ConfirmDialog';
 
 interface ContactsViewProps {
   contacts: Contact[];
@@ -32,6 +35,7 @@ interface ContactsViewProps {
   onOpenImport: () => void;
   onSelectContact: (contact: Contact) => void;
   onEditContact: (contact: Contact) => void;
+  onDataChanged: () => Promise<void>;
 }
 
 export const ContactsView: React.FC<ContactsViewProps> = ({
@@ -41,6 +45,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
   onOpenImport,
   onSelectContact,
   onEditContact,
+  onDataChanged,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterConsentWA, setFilterConsentWA] = useState<'all' | 'yes' | 'no'>('all');
@@ -53,6 +58,7 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
 
   // Unsubscribe Confirmation Modal State
   const [contactToUnsubscribe, setContactToUnsubscribe] = useState<Contact | null>(null);
+  const [contactToDelete, setContactToDelete] = useState<Contact | null>(null);
   const [unsubscribeReason, setUnsubscribeReason] = useState('Solicitud expresa de baja por llamada telefónica');
 
   // Dynamic filter lists
@@ -146,10 +152,16 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
     document.body.removeChild(link);
   };
 
-  const handleConfirmUnsubscribe = () => {
+  const handleConfirmUnsubscribe = async () => {
     if (!contactToUnsubscribe) return;
-    storageService.unsubscribeContact(contactToUnsubscribe.id, unsubscribeReason, currentUser);
-    setContactToUnsubscribe(null);
+    try {
+      await api.request(`/contacts/${contactToUnsubscribe.id}/opt-out`, { method: 'POST', body: JSON.stringify({ reason: unsubscribeReason }) });
+      await onDataChanged();
+      setContactToUnsubscribe(null);
+      showToast('Contacto dado de baja y excluido de futuros envíos.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo dar de baja el contacto.', 'error');
+    }
   };
 
   return (
@@ -353,8 +365,8 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                       <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1 mt-0.5">
                         <span>DPI: {contact.dpi}</span>
                         {contact.esNumeroPruebaTwilio && (
-                          <span className="bg-indigo-100 text-indigo-800 text-[9px] font-bold px-1.5 py-0.2 rounded" title="Número autorizado para Sandbox Twilio">
-                            Sandbox
+                          <span className="bg-indigo-100 text-indigo-800 text-[9px] font-bold px-1.5 py-0.2 rounded" title="Número autorizado para pruebas de mensajería">
+                            Prueba
                           </span>
                         )}
                       </div>
@@ -461,6 +473,12 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
 
+                            {currentUser.rol === 'admin' && (
+                              <button onClick={() => setContactToDelete(contact)} className="p-1.5 text-slate-400 hover:text-rose-700 hover:bg-rose-50 rounded-lg" title="Eliminar contacto (solo sin historial)">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
                             {contact.estado === 'activo' && (
                               <button
                                 onClick={() => setContactToUnsubscribe(contact)}
@@ -511,6 +529,19 @@ export const ContactsView: React.FC<ContactsViewProps> = ({
       </div>
 
       {/* Unsubscribe Modal */}
+      {contactToDelete && <ConfirmDialog
+        title="Eliminar contacto permanentemente"
+        description={`¿Eliminar a ${contactToDelete.nombres} ${contactToDelete.apellidos}? Si tiene historial de campañas, no se podrá borrar; use la opción de baja para conservar la trazabilidad.`}
+        confirmLabel="Eliminar contacto"
+        destructive
+        onCancel={() => setContactToDelete(null)}
+        onConfirm={async () => {
+          try { await api.deleteContact(contactToDelete.id); await onDataChanged(); showToast('Contacto eliminado.', 'success'); }
+          catch (error) { showToast(error instanceof Error ? error.message : 'No se pudo eliminar el contacto.', 'error'); }
+          setContactToDelete(null);
+        }}
+      />}
+
       {contactToUnsubscribe && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in duration-150">
