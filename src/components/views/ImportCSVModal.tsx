@@ -1,17 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, FileText, CheckCircle2, AlertTriangle, Download } from 'lucide-react';
-import { Contact, User } from '../../types';
-import { storageService } from '../../services/storageService';
+import { X, Upload, FileText, CheckCircle2, Download } from 'lucide-react';
+import { Contact } from '../../types';
+import { api } from '../../services/api';
+import { showToast } from '../../services/toast';
 
 interface ImportCSVModalProps {
   onClose: () => void;
-  currentUser: User;
+  onImported: () => Promise<void>;
 }
 
-export const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, currentUser }) => {
+export const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, onImported }) => {
   const [dragActive, setDragActive] = useState(false);
   const [parsedRows, setParsedRows] = useState<Partial<Contact>[]>([]);
-  const [errorMsg, setErrorMsg] = useState('');
   const [successCount, setSuccessCount] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,7 +41,6 @@ export const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, current
   };
 
   const processFile = (file: File) => {
-    setErrorMsg('');
     setSuccessCount(null);
 
     const reader = new FileReader();
@@ -50,78 +49,64 @@ export const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, current
         const text = evt.target?.result as string;
         const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0);
         if (lines.length < 2) {
-          setErrorMsg('El archivo CSV debe contener al menos un encabezado y una fila de datos.');
+          showToast('El archivo CSV debe contener al menos un encabezado y una fila de datos.', 'error');
           return;
         }
 
-        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').toLowerCase());
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase());
         const contacts: Partial<Contact>[] = [];
 
         for (let i = 1; i < lines.length; i++) {
           const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
           if (cols.length >= 2) {
+            const value = (names: string[], fallback: number) => {
+              const index = headers.findIndex(header => names.includes(header));
+              return cols[index >= 0 ? index : fallback] || '';
+            };
             contacts.push({
-              nombres: cols[0] || 'Contacto',
-              apellidos: cols[1] || 'Importado',
-              telefono: cols[2] || '+50255550000',
-              email: cols[3] || 'contacto.importado@correo.gt',
-              zona: cols[4] || 'Zona 1',
-              grupo: cols[5] || 'Importación Masiva CSV',
-              consentimientoWhatsApp: cols[6]?.toUpperCase() !== 'NO',
-              consentimientoSMS: cols[7]?.toUpperCase() !== 'NO',
-              fuenteConsentimiento: cols[8] || 'Carga masiva por CSV verificado',
+              nombres: value(['nombres', 'nombre', 'first_name'], 0),
+              apellidos: value(['apellidos', 'apellido', 'last_name'], 1),
+              telefono: value(['telefono', 'phone'], 2),
+              email: value(['email', 'correo'], 3),
+              departamento: value(['departamento', 'department'], -1),
+              zona: value(['zona', 'zone', 'municipio'], 4),
+              grupo: value(['grupo', 'group'], 5),
+              consentimientoWhatsApp: ['SI', 'SÍ', 'YES', 'TRUE'].includes(value(['consentimiento_whatsapp', 'whatsapp_opt_in'], 6).toUpperCase()),
+              consentimientoSMS: ['SI', 'SÍ', 'YES', 'TRUE'].includes(value(['consentimiento_sms', 'sms_opt_in'], 7).toUpperCase()),
+              fuenteConsentimiento: value(['fuente_consentimiento', 'consent_source'], 8) || 'Carga masiva por CSV verificado',
             });
           }
         }
 
         setParsedRows(contacts);
       } catch (err) {
-        setErrorMsg('Error al procesar el archivo CSV. Asegúrese de que tenga formato delimitado por comas.');
+        showToast('Error al procesar el archivo CSV. Asegúrese de que tenga formato delimitado por comas.', 'error');
       }
     };
     reader.readAsText(file);
   };
 
-  const handleApplyImport = () => {
+  const handleApplyImport = async () => {
     if (parsedRows.length === 0) return;
-
-    let imported = 0;
-    parsedRows.forEach((row, idx) => {
-      const newContact: Contact = {
-        id: `cnt-imp-${Date.now()}-${idx}`,
-        nombres: row.nombres || 'Nombre',
-        apellidos: row.apellidos || 'Apellido',
-        dpi: `2000 ${String(10000 + idx)} 0101`,
-        telefono: row.telefono || `+502 5555 ${String(1000 + idx)}`,
-        email: row.email || `afiliado${idx}@correo.gt`,
-        departamento: 'Guatemala',
-        zona: row.zona || 'Zona 1',
-        grupo: row.grupo || 'Afiliados Importados CSV',
-        fechaRegistro: new Date().toISOString().split('T')[0],
-        consentimientoWhatsApp: row.consentimientoWhatsApp ?? true,
-        consentimientoSMS: row.consentimientoSMS ?? true,
-        estado: 'activo',
-        fechaConsentimiento: new Date().toISOString().split('T')[0],
-        fuenteConsentimiento: row.fuenteConsentimiento || 'Carga masiva CSV verificada',
-        esNumeroPruebaTwilio: false,
-      };
-
-      storageService.saveContact(newContact, currentUser);
-      imported++;
-    });
-
-    setSuccessCount(imported);
-    setTimeout(() => {
-      onClose();
-    }, 1200);
+    try {
+      const result = await api.importContacts(parsedRows.map(row => ({
+        firstName: row.nombres?.trim(), lastName: row.apellidos?.trim(), phone: row.telefono?.replace(/\s+/g, ''),
+        email: row.email || undefined, department: row.departamento || undefined, zone: row.zona || undefined,
+        groupName: row.grupo || undefined, whatsappOptIn: Boolean(row.consentimientoWhatsApp), smsOptIn: Boolean(row.consentimientoSMS),
+        consentSource: row.fuenteConsentimiento || undefined, status: 'ACTIVE', isTwilioTestNumber: false,
+      })));
+      setSuccessCount(result.imported);
+      if (result.imported) showToast(`Se importaron ${result.imported} contactos.`, 'success');
+      if (result.failed) showToast(`${result.failed} filas no se pudieron importar; revise nombres, apellidos, teléfono E.164 y consentimiento.`, 'error');
+      await onImported();
+      if (!result.failed) setTimeout(onClose, 500);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo importar el archivo.', 'error');
+    }
   };
 
   const handleDownloadSample = () => {
-    const sample = 
-      'nombres,apellidos,telefono,email,zona,grupo,consentimiento_whatsapp,consentimiento_sms,fuente_consentimiento\n' +
-      'Estuardo David,Alonzo Morales,+502 5123 4567,estuardo@correo.gt,Zona 1,Afiliados Nuevos,SI,SI,Formulario físico firmado\n' +
-      'María René,Zepeda Cordero,+502 4890 1234,maria@correo.gt,Zona 10,Voluntariado 2026,SI,NO,Registro en feria comunitaria\n' +
-      'Pedro Antonio,Linares Paiz,+502 5901 8877,pedro@correo.gt,Zona 7,Comité Central,NO,SI,Portal de registro web';
+    const sample = 'nombres,apellidos,telefono,email,departamento,zona,grupo,consentimiento_whatsapp,consentimiento_sms,fuente_consentimiento\n';
 
     const blob = new Blob([sample], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -148,20 +133,6 @@ export const ImportCSVModal: React.FC<ImportCSVModalProps> = ({ onClose, current
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        {errorMsg && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
-
-        {successCount !== null && (
-          <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>¡Se importaron con éxito {successCount} contactos! Actualizando tabla...</span>
-          </div>
-        )}
 
         {/* Drag and Drop Zone */}
         <div

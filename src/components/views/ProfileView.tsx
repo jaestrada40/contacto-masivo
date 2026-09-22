@@ -5,14 +5,13 @@ import {
   ShieldCheck, 
   Lock, 
   Save, 
-  CheckCircle2, 
-  AlertCircle, 
   Clock, 
   LogOut,
   Bell
 } from 'lucide-react';
 import { User } from '../../types';
 import { authService } from '../../services/authService';
+import { showToast } from '../../services/toast';
 
 interface ProfileViewProps {
   currentUser: User;
@@ -26,24 +25,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onLogout 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   
-  const [statusMsg, setStatusMsg] = useState<{ success?: boolean; text?: string } | null>(null);
 
   const handleUpdateProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    setStatusMsg(null);
-
     if (newPassword) {
       if (newPassword.length < 6) {
-        setStatusMsg({ success: false, text: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+        showToast('La nueva contraseña debe tener al menos 6 caracteres.', 'error');
         return;
       }
       if (newPassword !== confirmPassword) {
-        setStatusMsg({ success: false, text: 'Las contraseñas no coinciden.' });
+        showToast('Las contraseñas no coinciden.', 'error');
         return;
       }
     }
 
-    setStatusMsg({ success: true, text: 'Perfil institucional actualizado satisfactoriamente.' });
+    showToast('La actualización del perfil todavía no está conectada al servidor; no se guardaron cambios.', 'error');
     setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');
@@ -56,17 +52,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({ currentUser, onLogout 
         <h1 className="text-xl font-bold text-slate-900">Perfil de Usuario</h1>
         <p className="text-xs text-slate-500">Gestione sus credenciales de acceso y datos de sesión activa</p>
       </div>
-
-      {statusMsg && (
-        <div className={`p-3 rounded-xl flex items-center gap-2 text-xs ${
-          statusMsg.success 
-            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
-            : 'bg-rose-50 text-rose-800 border border-rose-200'
-        }`}>
-          {statusMsg.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertCircle className="w-4 h-4 text-rose-600" />}
-          <span className="font-semibold">{statusMsg.text}</span>
-        </div>
-      )}
 
       {/* Profile Overview Card */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-4">

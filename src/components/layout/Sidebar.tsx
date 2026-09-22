@@ -16,7 +16,7 @@ import {
   FileCheck2
 } from 'lucide-react';
 import { User, UserRole } from '../../types';
-import { storageService } from '../../services/storageService';
+import { api } from '../../services/api';
 
 export type ActiveView = 
   | 'dashboard' 
@@ -49,9 +49,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSwitchUser,
   onCloseMobile,
 }) => {
-  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>(() => storageService.getSettings().logoDataUrl);
+  const [logoDataUrl, setLogoDataUrl] = useState<string | undefined>();
 
-  useEffect(() => storageService.subscribe(() => setLogoDataUrl(storageService.getSettings().logoDataUrl)), []);
+  useEffect(() => {
+    const updateLogo = (event: Event) => setLogoDataUrl((event as CustomEvent<string | undefined>).detail || undefined);
+    api.branding().then(value => setLogoDataUrl(value.logoDataUrl || undefined)).catch(() => setLogoDataUrl(undefined));
+    window.addEventListener('branding-updated', updateLogo);
+    return () => window.removeEventListener('branding-updated', updateLogo);
+  }, []);
   const isSelected = (view: ActiveView) => {
     if (view === 'campanas' && (currentView === 'nueva_campana' || currentView === 'campana_detalle')) {
       return true;
@@ -122,7 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span className="text-slate-200 font-medium">Modo Demo Activo</span>
           </div>
-          <span className="text-blue-300 font-semibold">800 sims</span>
+          <span className="text-blue-300 font-semibold">Datos reales</span>
         </div>
       </div>
 

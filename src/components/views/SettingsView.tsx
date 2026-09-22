@@ -5,8 +5,6 @@ import {
   ShieldCheck, 
   PhoneCall, 
   Save, 
-  CheckCircle2, 
-  AlertTriangle, 
   RotateCw, 
   Eye, 
   EyeOff, 
@@ -16,44 +14,46 @@ import {
   MessageSquare,
   Lock
 } from 'lucide-react';
-import { AppSettings, User } from '../../types';
-import { storageService } from '../../services/storageService';
-import { twilioService } from '../../services/twilioMessagingService';
+import { OrganizationSettings, User } from '../../types';
 import { api } from '../../services/api';
+import { showToast } from '../../services/toast';
 
 interface SettingsViewProps {
   currentUser: User;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
-  const [settings, setSettings] = useState<AppSettings>(storageService.getSettings());
+  const [settings, setSettings] = useState<OrganizationSettings>({ nombre: '', logoTexto: '', correoSoporte: '', telefonoSoporte: '', sitioWeb: '', twilioConfigured: false, twilioAccountSidMasked: '', twilioWhatsAppFrom: '', twilioSmsFrom: '', costoWhatsAppUtilityMil: 0, costoWhatsAppMarketingMil: 0, costoSmsMil: 0, alertaCostoUmbral: 0, horarioPermitidoInicio: '08:00', horarioPermitidoFin: '20:00', permitirEnviosFindeSemana: false });
   const [showTokens, setShowTokens] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
-  const [testResult, setTestResult] = useState<{ success?: boolean; message?: string } | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [logoError, setLogoError] = useState('');
   const [mfaEnforced, setMfaEnforced] = useState<boolean | null>(null);
   const [mfaSaving, setMfaSaving] = useState(false);
-  const [mfaError, setMfaError] = useState('');
 
   useEffect(() => {
     if (currentUser.rol !== 'admin') return;
-    api.settings().then((value: any) => setMfaEnforced(Boolean(value.mfaEnforced))).catch(() => setMfaError('No fue posible consultar el estado de MFA.'));
+    api.settings().then((value: any) => {
+      setMfaEnforced(Boolean(value.mfaEnforced));
+      setSettings(previous => ({ ...previous, nombre: value.organizationName || '', logoDataUrl: value.logoDataUrl || undefined,
+        correoSoporte: value.supportEmail || '', telefonoSoporte: value.supportPhone || '',
+        horarioPermitidoInicio: `${String(value.allowedStartHour ?? 8).padStart(2, '0')}:00`,
+        horarioPermitidoFin: `${String(value.allowedEndHour ?? 20).padStart(2, '0')}:00`,
+        costoWhatsAppUtilityMil: Number(value.whatsappUtilityRatePerThousand || 0),
+        costoWhatsAppMarketingMil: Number(value.whatsappMarketingRatePerThousand || 0), costoSmsMil: Number(value.smsRatePerThousand || 0) }));
+    }).catch(() => showToast('No fue posible consultar la configuración.', 'error'));
   }, [currentUser.rol]);
 
   const handleLogoUpload = (file?: File) => {
-    setLogoError('');
     if (!file) return;
-    if (file.size > 1024 * 1024) { setLogoError('El logo no puede exceder 1 MB.'); return; }
+    if (file.size > 1024 * 1024) { showToast('El logo no puede exceder 1 MB.', 'error'); return; }
     const acceptedRasterTypes = ['image/png', 'image/jpeg', 'image/webp'];
     const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-    if (!acceptedRasterTypes.includes(file.type) && !isSvg) { setLogoError('Use una imagen PNG, JPEG, WebP o SVG.'); return; }
+    if (!acceptedRasterTypes.includes(file.type) && !isSvg) { showToast('Use una imagen PNG, JPEG, WebP o SVG.', 'error'); return; }
     const reader = new FileReader();
     if (isSvg) {
       reader.onload = () => {
         const svg = String(reader.result);
         if (!/^\s*<svg[\s>]/i.test(svg) || /<\s*(script|foreignObject|iframe|object|embed)\b|\son\w+\s*=|(?:href|xlink:href)\s*=\s*["']\s*(?:https?:|javascript:|data:)/i.test(svg)) {
-          setLogoError('El SVG contiene contenido no permitido. Use un SVG estático, sin scripts ni enlaces externos.');
+          showToast('El SVG contiene contenido no permitido. Use un SVG estático, sin scripts ni enlaces externos.', 'error');
           return;
         }
         setSettings(previous => ({ ...previous, logoDataUrl: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` }));
@@ -66,36 +66,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
   };
 
   const handleMfaEnforcement = async (enabled: boolean) => {
-    setMfaError('');
     setMfaSaving(true);
     try {
       const result = await api.mfaEnforcement(enabled);
       setMfaEnforced(result.mfaEnforced);
+      showToast(`MFA ${enabled ? 'obligatorio' : 'opcional'} actualizado.`, 'success');
     } catch (error) {
-      setMfaError(error instanceof Error ? error.message : 'No fue posible actualizar MFA.');
+      showToast(error instanceof Error ? error.message : 'No fue posible actualizar MFA.', 'error');
     } finally {
       setMfaSaving(false);
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    storageService.saveSettings(settings, currentUser);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2500);
+    try {
+      await api.request('/settings', { method: 'PATCH', body: JSON.stringify({ logoDataUrl: settings.logoDataUrl ?? null, supportEmail: settings.correoSoporte || undefined, supportPhone: settings.telefonoSoporte || undefined, allowedStartHour: Number(settings.horarioPermitidoInicio.split(':')[0]), allowedEndHour: Number(settings.horarioPermitidoFin.split(':')[0]), whatsappUtilityRatePerThousand: settings.costoWhatsAppUtilityMil, whatsappMarketingRatePerThousand: settings.costoWhatsAppMarketingMil, smsRatePerThousand: settings.costoSmsMil }) });
+      window.dispatchEvent(new CustomEvent('branding-updated', { detail: settings.logoDataUrl }));
+      showToast('Configuración guardada.', 'success');
+    } catch (error) { showToast(error instanceof Error ? error.message : 'No se pudo guardar la configuración.', 'error'); }
   };
 
   const handleTestTwilio = async () => {
     setTestingConnection(true);
-    setTestResult(null);
-
-    const res = await twilioService.testTwilioCredentials(
-      settings.twilioAccountSid,
-      settings.twilioAuthToken
-    );
-
     setTestingConnection(false);
-    setTestResult(res);
+    showToast('Las credenciales Twilio no se guardan ni prueban desde el navegador. Configúrelas en el entorno seguro del servidor.', 'info');
   };
 
   return (
@@ -109,12 +104,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
           </p>
         </div>
 
-        {saveSuccess && (
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Configuración guardada en auditoría</span>
-          </div>
-        )}
       </div>
 
       <form onSubmit={handleSave} className="space-y-6 text-xs">
@@ -135,7 +124,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
               {settings.logoDataUrl && <button type="button" onClick={() => setSettings(previous => ({ ...previous, logoDataUrl: undefined }))} className="px-3 py-2 rounded-lg border border-slate-200 text-slate-700 font-bold">Quitar</button>}
             </div>
           </div>
-          {logoError && <p className="text-rose-700 font-medium">{logoError}</p>}
         </div>
 
         {currentUser.rol === 'admin' && (
@@ -156,7 +144,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
                 <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${mfaEnforced ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
             </div>
-            {mfaError && <p className="text-rose-700 font-medium">{mfaError}</p>}
           </div>
         )}
         {/* Twilio API Integration Section */}
@@ -183,28 +170,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
             </button>
           </div>
 
-          {testResult && (
-            <div className={`p-3 rounded-lg flex items-start gap-2 ${
-              testResult.success 
-                ? 'bg-emerald-50 text-emerald-900 border border-emerald-200' 
-                : 'bg-rose-50 text-rose-900 border border-rose-200'
-            }`}>
-              {testResult.success ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              )}
-              <span className="font-medium">{testResult.message}</span>
-            </div>
-          )}
-
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Twilio Account SID</label>
               <input
                 type="text"
-                value={settings.twilioAccountSid}
-                onChange={e => setSettings({ ...settings, twilioAccountSid: e.target.value })}
+                value={settings.twilioAccountSidMasked}
+                readOnly
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
               />
             </div>
@@ -223,8 +195,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
               </div>
               <input
                 type={showTokens ? 'text' : 'password'}
-                value={settings.twilioAuthToken}
-                onChange={e => setSettings({ ...settings, twilioAuthToken: e.target.value })}
+                value=""
+                readOnly
+                placeholder="Configure en el servidor"
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
               />
             </div>
@@ -233,8 +206,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
               <label className="block font-semibold text-slate-700 mb-1">Remitente WhatsApp (From / Sandbox)</label>
               <input
                 type="text"
-                value={settings.twilioPhoneNumberWhatsApp}
-                onChange={e => setSettings({ ...settings, twilioPhoneNumberWhatsApp: e.target.value })}
+                value={settings.twilioWhatsAppFrom}
+                readOnly
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
                 placeholder="whatsapp:+14155238886"
               />
@@ -244,8 +217,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
               <label className="block font-semibold text-slate-700 mb-1">Remitente SMS (From / Shortcode)</label>
               <input
                 type="text"
-                value={settings.twilioPhoneNumberSms}
-                onChange={e => setSettings({ ...settings, twilioPhoneNumberSms: e.target.value })}
+                value={settings.twilioSmsFrom}
+                readOnly
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg font-mono"
                 placeholder="+15005550006"
               />
@@ -271,8 +244,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ currentUser }) => {
             </label>
             <input
               type="text"
-              value={settings.mensajeOptOutTexto}
-              onChange={e => setSettings({ ...settings, mensajeOptOutTexto: e.target.value })}
+              value=""
+              readOnly
+              placeholder="Configuración no disponible"
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg"
             />
             <p className="text-[11px] text-slate-400 mt-1">

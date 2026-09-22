@@ -56,7 +56,7 @@ export interface Segment {
 
 export type CampaignType = 'recordatorio' | 'aviso' | 'informativa' | 'promocion' | 'urgente';
 export type CampaignChannel = 'whatsapp' | 'sms' | 'ambos';
-export type CampaignMode = 'demo' | 'twilio_test';
+export type CampaignMode = 'demo' | 'twilio_test' | 'meta_test';
 export type CampaignStatus = 'borrador' | 'programada' | 'enviando' | 'completada' | 'cancelada' | 'fallida';
 
 export interface CampaignStats {

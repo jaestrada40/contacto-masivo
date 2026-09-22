@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import { X, Save, AlertCircle, Phone, Smartphone } from 'lucide-react';
-import { Contact, User } from '../../types';
-import { storageService } from '../../services/storageService';
+import { X, Save, Phone, Smartphone } from 'lucide-react';
+import { Contact } from '../../types';
+import { api } from '../../services/api';
+import { showToast } from '../../services/toast';
 
 interface ContactEditModalProps {
   contact: Contact | null; // null means creating a new contact
   onClose: () => void;
-  currentUser: User;
+  onSaved: () => Promise<void>;
 }
 
 export const ContactEditModal: React.FC<ContactEditModalProps> = ({
   contact,
   onClose,
-  currentUser,
+  onSaved,
 }) => {
   const isEditing = Boolean(contact);
 
@@ -21,59 +22,45 @@ export const ContactEditModal: React.FC<ContactEditModalProps> = ({
   const [dpi, setDpi] = useState(contact?.dpi || '');
   const [telefono, setTelefono] = useState(contact?.telefono || '+502 ');
   const [email, setEmail] = useState(contact?.email || '');
-  const [departamento, setDepartamento] = useState(contact?.departamento || 'Guatemala');
-  const [zona, setZona] = useState(contact?.zona || 'Zona 1');
-  const [grupo, setGrupo] = useState(contact?.grupo || 'Afiliados Zona 1');
-  const [consentimientoWhatsApp, setConsentimientoWhatsApp] = useState(contact ? contact.consentimientoWhatsApp : true);
-  const [consentimientoSMS, setConsentimientoSMS] = useState(contact ? contact.consentimientoSMS : true);
-  const [fuenteConsentimiento, setFuenteConsentimiento] = useState(contact?.fuenteConsentimiento || 'Formulario digital de consentimiento voluntario');
+  const [departamento, setDepartamento] = useState(contact?.departamento || '');
+  const [zona, setZona] = useState(contact?.zona || '');
+  const [grupo, setGrupo] = useState(contact?.grupo || '');
+  const [consentimientoWhatsApp, setConsentimientoWhatsApp] = useState(contact?.consentimientoWhatsApp || false);
+  const [consentimientoSMS, setConsentimientoSMS] = useState(contact?.consentimientoSMS || false);
+  const [fuenteConsentimiento, setFuenteConsentimiento] = useState(contact?.fuenteConsentimiento || '');
   const [estado, setEstado] = useState<Contact['estado']>(contact?.estado || 'activo');
   const [esNumeroPruebaTwilio, setEsNumeroPruebaTwilio] = useState(contact?.esNumeroPruebaTwilio || false);
-  const [errorMsg, setErrorMsg] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg('');
-
     if (!nombres.trim() || !apellidos.trim()) {
-      setErrorMsg('Por favor ingrese nombres y apellidos completos.');
+      showToast('Por favor ingrese nombres y apellidos completos.', 'error');
       return;
     }
 
     // Phone format check (must start with + and country code, e.g. +502)
     const cleanedPhone = telefono.replace(/\s+/g, '');
     if (!cleanedPhone.startsWith('+') || cleanedPhone.length < 9) {
-      setErrorMsg('El teléfono debe tener formato internacional válido (ejemplo: +50255555555 o +502 5555 1234).');
+      showToast('El teléfono debe tener formato internacional válido (ejemplo: +50255555555 o +502 5555 1234).', 'error');
       return;
     }
 
-    if (!consentimientoWhatsApp && !consentimientoSMS && estado === 'activo') {
-      setErrorMsg('Debe registrar al menos un canal autorizado (WhatsApp o SMS) para dar de alta el contacto como activo.');
-      return;
+    try {
+      const contactData = {
+        firstName: nombres.trim(), lastName: apellidos.trim(), documentId: dpi.trim() || undefined,
+        phone: cleanedPhone, email: email.trim() || undefined, department: departamento.trim() || undefined, zone: zona.trim() || undefined,
+        groupName: grupo.trim() || undefined, status: estado === 'activo' ? 'ACTIVE' : estado === 'bloqueado' ? 'BLOCKED' : 'INACTIVE',
+        whatsappOptIn: consentimientoWhatsApp, smsOptIn: consentimientoSMS,
+        consentSource: fuenteConsentimiento.trim() || undefined, isTwilioTestNumber: esNumeroPruebaTwilio,
+      };
+      if (contact) await api.updateContact(contact.id, contactData);
+      else await api.createContact(contactData);
+      await onSaved();
+      showToast(contact ? 'Contacto actualizado.' : 'Contacto creado.', 'success');
+      onClose();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo guardar el contacto.', 'error');
     }
-
-    const contactData: Contact = {
-      id: contact ? contact.id : `cnt-${Date.now().toString().slice(-4)}`,
-      nombres: nombres.trim(),
-      apellidos: apellidos.trim(),
-      dpi: dpi.trim() || 'No especificado',
-      telefono: telefono.trim(),
-      email: email.trim() || `${nombres.toLowerCase().split(' ')[0]}@correo.gt`,
-      departamento: departamento.trim(),
-      zona: zona.trim(),
-      grupo: grupo.trim(),
-      fechaRegistro: contact ? contact.fechaRegistro : new Date().toISOString().split('T')[0],
-      consentimientoWhatsApp,
-      consentimientoSMS,
-      estado,
-      fechaConsentimiento: contact ? contact.fechaConsentimiento : new Date().toISOString().split('T')[0],
-      fuenteConsentimiento: fuenteConsentimiento.trim(),
-      esNumeroPruebaTwilio,
-      fechaBaja: estado === 'inactivo' ? (contact?.fechaBaja || new Date().toISOString().split('T')[0]) : undefined,
-    };
-
-    storageService.saveContact(contactData, currentUser);
-    onClose();
   };
 
   return (
@@ -95,13 +82,6 @@ export const ContactEditModal: React.FC<ContactEditModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
-
-        {errorMsg && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
           {/* Nombres y Apellidos */}
@@ -256,7 +236,7 @@ export const ContactEditModal: React.FC<ContactEditModalProps> = ({
             </div>
           </div>
 
-          {/* Twilio Test Number Flag */}
+          {/* Test-provider allowlist flag */}
           <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-100">
             <label className="flex items-start gap-2.5 cursor-pointer">
               <input
@@ -267,10 +247,10 @@ export const ContactEditModal: React.FC<ContactEditModalProps> = ({
               />
               <div>
                 <span className="font-bold text-indigo-950 block">
-                  Autorizar como Número de Prueba Twilio (Sandbox)
+                  Autorizar para pruebas de mensajería
                 </span>
                 <span className="text-[11px] text-indigo-700">
-                  Habilita este número para recibir difusiones reales cuando se ejecute en <strong>Modo Prueba Twilio</strong>.
+                  Permite incluir este número en los modos de prueba de Twilio o Meta. Además, Meta exige autorizar el destinatario en su panel de API Setup.
                 </span>
               </div>
             </label>

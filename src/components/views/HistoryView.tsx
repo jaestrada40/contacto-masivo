@@ -13,6 +13,7 @@ import {
   RotateCw 
 } from 'lucide-react';
 import { MessageLog, Campaign } from '../../types';
+import { formatGuatemalaDateTime } from '../../utils/dateFormat';
 
 interface HistoryViewProps {
   messageLogs: MessageLog[];
@@ -51,7 +52,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ messageLogs, campaigns
       `"${l.campanaNombre || ''}"`,
       `"${l.mensajeTexto.replace(/"/g, '""')}"`,
       l.estado,
-      `"${l.fechaHora}"`,
+      `"${formatGuatemalaDateTime(l.fechaHora)}"`,
       `"${l.error || ''}"`
     ]);
 
@@ -189,7 +190,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ messageLogs, campaigns
                       </span>
                     </td>
                     <td className="py-3 px-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
-                      {log.fechaHora}
+                      {formatGuatemalaDateTime(log.fechaHora)}
                     </td>
                     <td className="py-3 px-4 text-[11px]">
                       {log.error ? (

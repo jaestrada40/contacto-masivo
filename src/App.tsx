@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { authService } from './services/authService';
-import { storageService } from './services/storageService';
 import { api } from './services/api';
 import { User, Contact, Campaign, Segment, MessageLog, AuditLog, UserRole } from './types';
 import { Sidebar, ActiveView } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
+import { ToastViewport } from './components/layout/ToastViewport';
 
 // View components
 import { LoginView } from './components/views/LoginView';
@@ -24,14 +24,24 @@ import { ProfileView } from './components/views/ProfileView';
 import { ContactDetailModal } from './components/views/ContactDetailModal';
 import { ContactEditModal } from './components/views/ContactEditModal';
 import { ImportCSVModal } from './components/views/ImportCSVModal';
+import { showToast } from './services/toast';
 
 export default function App() {
+  const readLocation = (): { view: ActiveView; campaignId: string } => {
+    const params = new URLSearchParams(window.location.search);
+    const validViews: ActiveView[] = ['dashboard', 'contactos', 'segmentos', 'campanas', 'nueva_campana', 'campana_detalle', 'historial', 'reportes', 'usuarios', 'configuracion', 'perfil'];
+    const requestedView = params.get('vista') as ActiveView | null;
+    const view = requestedView && validViews.includes(requestedView) ? requestedView : 'dashboard';
+    return { view, campaignId: params.get('campana') || '' };
+  };
+  const initialLocation = readLocation();
+
   // Current user state
   const [currentUser, setCurrentUser] = useState<User | null>(() => authService.getCurrentUser());
 
   // Active view state
-  const [activeView, setActiveView] = useState<ActiveView>('dashboard');
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
+  const [activeView, setActiveView] = useState<ActiveView>(initialLocation.view);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>(initialLocation.campaignId);
   const [preselectedSegmentId, setPreselectedSegmentId] = useState<string | undefined>(undefined);
 
   // Mobile sidebar drawer state
@@ -44,46 +54,71 @@ export default function App() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   // Reactive data from storageService
-  const [contacts, setContacts] = useState<Contact[]>(() => storageService.getContacts());
-  const [campaigns, setCampaigns] = useState<Campaign[]>(() => storageService.getCampaigns());
-  const [segments, setSegments] = useState<Segment[]>(() => storageService.getSegments());
-  const [messageLogs, setMessageLogs] = useState<MessageLog[]>(() => storageService.getMessageLogs());
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
+  const [messageLogs, setMessageLogs] = useState<MessageLog[]>([]);
 
-  // Subscribe to storage changes
+  // Discard only legacy demo/business records cached in this browser. Keep user/session keys.
   useEffect(() => {
-    const unsubscribe = storageService.subscribe(() => {
-      setContacts(storageService.getContacts());
-      setCampaigns(storageService.getCampaigns());
-      setSegments(storageService.getSegments());
-      setMessageLogs(storageService.getMessageLogs());
-      // Update current user in case of role switches or edits
-      const updatedUser = authService.getCurrentUser();
-      if (updatedUser) {
-        setCurrentUser(updatedUser);
-      }
-    });
-
-    return () => unsubscribe();
+    ['conecta_masivo_contacts','conecta_masivo_campaigns','conecta_masivo_messages','conecta_masivo_segments','conecta_masivo_settings','conecta_masivo_audit']
+      .forEach(key => localStorage.removeItem(key));
   }, []);
 
   useEffect(() => {
+    const restoreFromUrl = () => {
+      const location = readLocation();
+      setActiveView(location.view);
+      setSelectedCampaignId(location.campaignId);
+    };
+    window.addEventListener('popstate', restoreFromUrl);
+    return () => window.removeEventListener('popstate', restoreFromUrl);
+  }, []);
+
+  const refreshData = useCallback(async () => {
     if (!currentUser || !api.token()) return;
-    Promise.all([api.contacts(), api.campaigns(), api.segments(), api.messages()])
-      .then(([apiContacts, apiCampaigns, apiSegments, apiMessages]) => {
-        setContacts(apiContacts);
-        setCampaigns(apiCampaigns);
-        setSegments(apiSegments);
-        setMessageLogs(apiMessages);
-      })
-      .catch(error => console.warn('No se pudo sincronizar con la API de Conecta Masivo:', error));
+    try {
+      const [apiContacts, apiCampaigns, apiSegments, apiMessages] = await Promise.all([api.contacts(), api.campaigns(), api.segments(), api.messages()]);
+      setContacts(apiContacts); setCampaigns(apiCampaigns); setSegments(apiSegments); setMessageLogs(apiMessages);
+    } catch (error) {
+      console.warn('No se pudo sincronizar con la API de Conecta Masivo:', error);
+      showToast(error instanceof Error ? error.message : 'No se pudieron cargar los datos.', 'error');
+    }
   }, [currentUser]);
+
+  useEffect(() => { void refreshData(); }, [refreshData]);
+
+  const hasProcessingCampaign = campaigns.some(campaign => campaign.estado === 'enviando');
+  useEffect(() => {
+    if (!currentUser || !hasProcessingCampaign) return;
+    let refreshInProgress = false;
+    const pollCampaigns = async () => {
+      if (refreshInProgress) return;
+      refreshInProgress = true;
+      try {
+        setCampaigns(await api.campaigns());
+      } catch (error) {
+        console.warn('No se pudo actualizar el estado de las campañas:', error);
+      } finally {
+        refreshInProgress = false;
+      }
+    };
+    const interval = window.setInterval(() => { void pollCampaigns(); }, 1500);
+    return () => window.clearInterval(interval);
+  }, [currentUser, hasProcessingCampaign]);
 
   // Navigation handler
   const handleNavigate = (view: ActiveView, extraId?: string) => {
+    const params = new URLSearchParams();
+    params.set('vista', view);
     if (view === 'campana_detalle' && extraId) {
       setSelectedCampaignId(extraId);
+      params.set('campana', extraId);
+    } else if (view === 'campana_detalle' && selectedCampaignId) {
+      params.set('campana', selectedCampaignId);
     }
     setActiveView(view);
+    window.history.pushState(null, '', `${window.location.pathname}?${params.toString()}`);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -91,6 +126,7 @@ export default function App() {
   const handleStartCampaignWithSegment = (segmentId: string) => {
     setPreselectedSegmentId(segmentId);
     setActiveView('nueva_campana');
+    window.history.pushState(null, '', `${window.location.pathname}?vista=nueva_campana`);
   };
 
   // Switch demo user role
@@ -108,11 +144,12 @@ export default function App() {
 
   // If not logged in, render the login view
   if (!currentUser) {
-    return <LoginView onLoginSuccess={() => setCurrentUser(authService.getCurrentUser())} />;
+    return <><ToastViewport /><LoginView onLoginSuccess={() => setCurrentUser(authService.getCurrentUser())} /></>;
   }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#F6F8FB] font-sans antialiased text-[#172033]">
+      <ToastViewport />
       {/* Desktop Sidebar */}
       <div className="hidden lg:block h-full shrink-0">
         <Sidebar
@@ -163,6 +200,7 @@ export default function App() {
               <DashboardView
                 contacts={contacts}
                 campaigns={campaigns}
+                messageLogs={messageLogs}
                 onNavigate={handleNavigate}
                 currentUser={currentUser}
                 onOpenImportModal={() => setIsImportModalOpen(true)}
@@ -178,6 +216,7 @@ export default function App() {
                 onOpenImport={() => setIsImportModalOpen(true)}
                 onSelectContact={c => setSelectedContactForDetail(c)}
                 onEditContact={c => setSelectedContactForEdit(c)}
+                onDataChanged={refreshData}
               />
             )}
 
@@ -188,6 +227,7 @@ export default function App() {
                 currentUser={currentUser}
                 onNavigate={handleNavigate}
                 onStartCampaignWithSegment={handleStartCampaignWithSegment}
+                onDataChanged={refreshData}
               />
             )}
 
@@ -206,6 +246,7 @@ export default function App() {
                 currentUser={currentUser}
                 onNavigate={handleNavigate}
                 preselectedSegmentId={preselectedSegmentId}
+                onDataChanged={refreshData}
               />
             )}
 
@@ -228,7 +269,6 @@ export default function App() {
 
             {activeView === 'reportes' && (
               <ReportsView
-                campaigns={campaigns}
                 contacts={contacts}
                 messageLogs={messageLogs}
               />
@@ -268,14 +308,14 @@ export default function App() {
             setSelectedContactForEdit(null);
             setIsCreatingNewContact(false);
           }}
-          currentUser={currentUser}
+          onSaved={refreshData}
         />
       )}
 
       {isImportModalOpen && (
         <ImportCSVModal
           onClose={() => setIsImportModalOpen(false)}
-          currentUser={currentUser}
+          onImported={refreshData}
         />
       )}
     </div>
